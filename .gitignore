@@ -1,0 +1,11 @@
+node_modules/
+dist/
+outputs/
+public/
+.playwright-mcp/
+tools/node_modules
+tools/build_followup_template.mjs
+115_GSC学習塾/*transcript.txt
+.DS_Store
+*.tsbuildinfo
+*.inspect.ndjson
