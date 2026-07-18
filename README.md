@@ -1,27 +1,38 @@
-# 定期テスト現状分析アプリ
+# GSC頑張らない習慣化アプリ
 
-学校の定期テスト写真をもとに、教科別の強み・弱み・次回学習メモを確認する学習塾向けWebアプリです。
+GSC朝活のビジネス向け8テーマと、ダイエット向けの3ヶ月目標・体重管理表アップロードを切り分けたReactアプリです。
 
-## 現在のMVP
+## 主な機能
 
-- メールアドレス + 生徒ID / 先生IDによるマジックリンクログイン
-- 使い捨てログインURLの発行・有効期限・使用済み判定のデモ
-- 保護者/生徒/先生/管理者の権限別表示
-- Google Drive同期を想定したファイル状態管理
-- 数学・英語のサンプル分析結果
-- 単元別得点率、強み、弱み、次回学習、先生メモの表示
-- 他生徒データ参照の拒否を想定した権限監査表示
+- ビジネス用の月8回テーマサイクル管理
+- 火・金朝活を想定した週2回×4週の月間表示
+- 8テーマ別のワーク記入
+- 今日の行動タスク管理
+- KGI・KPI・行動KPIの進捗管理
+- ダイエット用の3ヶ月目標設定シート画像管理
+- 月1枚の体重管理表を週2回アップロードする記録フロー
+- 写真、現在体重、本人メモをもとにしたアドバイス表示
+- AIコーチへ渡すための記録プロンプト生成
+- ブラウザの `localStorage` への自動保存
 
-## デモ用アカウント
+## ビジネス 8テーマ
 
-```text
-保護者: parent.hinata@example.com / STU-7KQ3-92A
-生徒: student.hinata@example.com / STU-7KQ3-92A
-先生: teacher@gsc-juku.example.com / TCH-2026-GSC
-管理者: admin@gsc-juku.example.com / ADM-2026-GSC
-```
+1. 目標設定
+2. 現状把握
+3. 強み分析
+4. 価値・ニーズ分析
+5. 行動分析
+6. 選択と集中
+7. 数値目標設定
+8. アクションプラン
 
-ローカルMVPでは実メール送信の代わりに、画面内のデモ受信箱へログインURLを表示します。実運用では、URL発行・メール送信・トークン保存・権限チェックをサーバー側で実装します。
+## ダイエット運用
+
+ダイエットモードは、ビジネス用の8テーマサイクルから切り離した専用導線です。
+
+最初に3ヶ月目標設定シートを1枚アップロードし、その後は1ヶ月ごとの体重管理表を週2回写真でアップロードします。現在体重とメモを入れると、進捗・提出頻度・生活メモをもとにしたアドバイスが表示されます。
+
+現時点のアドバイスはブラウザ内のルールベースです。将来的にOCRやAI APIへ接続すると、手書き内容やグラフ推移をより自動で読み取れる設計です。
 
 ## VS Code連携
 
@@ -50,11 +61,4 @@ PATH=/Users/michikooie/.cache/codex-runtimes/codex-primary-runtime/dependencies/
 
 ```bash
 pnpm build
-```
-
-同梱Nodeを使う場合:
-
-```bash
-PATH=/Users/michikooie/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:/Users/michikooie/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin:$PATH \
-/Users/michikooie/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/pnpm build
 ```

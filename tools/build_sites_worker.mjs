@@ -15,6 +15,7 @@ if (!fs.existsSync(hostingSource)) {
   throw new Error(".openai/hosting.json was not found.");
 }
 
+fs.rmSync(path.join(distDir, "ai-community-assets"), { recursive: true, force: true });
 fs.rmSync(serverDir, { recursive: true, force: true });
 fs.mkdirSync(serverDir, { recursive: true });
 fs.mkdirSync(path.dirname(hostingTarget), { recursive: true });
