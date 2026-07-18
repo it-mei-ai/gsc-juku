@@ -16,6 +16,7 @@ if (!fs.existsSync(hostingSource)) {
 }
 
 fs.rmSync(path.join(distDir, "ai-community-assets"), { recursive: true, force: true });
+fs.rmSync(path.join(distDir, "gsc-assets"), { recursive: true, force: true });
 fs.rmSync(serverDir, { recursive: true, force: true });
 fs.mkdirSync(serverDir, { recursive: true });
 fs.mkdirSync(path.dirname(hostingTarget), { recursive: true });
