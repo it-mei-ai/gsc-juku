@@ -1,7 +1,7 @@
 node_modules/
 dist/
 outputs/
-public/
+public/ai-community-assets/
 .playwright-mcp/
 tools/node_modules
 tools/build_followup_template.mjs
