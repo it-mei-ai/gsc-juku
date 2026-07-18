@@ -1,27 +1,26 @@
-# 定期テスト現状分析アプリ
+# GSC学習塾 定期テスト現状分析アプリ
 
-学校の定期テスト写真をもとに、教科別の強み・弱み・次回学習メモを確認する学習塾向けWebアプリです。
+学校の定期テスト答案写真をもとに、生徒別・教科別の強み、弱み、次回の学習方針を確認できるWebアプリです。
 
-## 現在のMVP
+## 主な機能
 
-- メールアドレス + 生徒ID / 先生IDによるマジックリンクログイン
-- 使い捨てログインURLの発行・有効期限・使用済み判定のデモ
-- 保護者/生徒/先生/管理者の権限別表示
-- Google Drive同期を想定したファイル状態管理
-- 数学・英語のサンプル分析結果
-- 単元別得点率、強み、弱み、次回学習、先生メモの表示
-- 他生徒データ参照の拒否を想定した権限監査表示
+- メールアドレスと生徒ID / 先生IDによるマジックリンクログイン
+- 生徒、保護者、講師、管理者のロール別閲覧制御
+- Google Drive答案フォルダ同期を想定したファイル取り込み導線
+- 数学・英語のテスト結果、単元別分析、問題別コメント表示
+- 弱点補強と得意分野伸長のための次回学習プラン表示
+- VS Codeタスクから開発、ビルド、プレビューを実行
 
-## デモ用アカウント
+## デモログイン
 
-```text
-保護者: parent.hinata@example.com / STU-7KQ3-92A
-生徒: student.hinata@example.com / STU-7KQ3-92A
-先生: teacher@gsc-juku.example.com / TCH-2026-GSC
-管理者: admin@gsc-juku.example.com / ADM-2026-GSC
-```
+画面左のフォームに以下のいずれかを入れると、画面内の「デモ受信箱」にログインURLが届きます。
 
-ローカルMVPでは実メール送信の代わりに、画面内のデモ受信箱へログインURLを表示します。実運用では、URL発行・メール送信・トークン保存・権限チェックをサーバー側で実装します。
+| ロール | メールアドレス | ID |
+| --- | --- | --- |
+| 保護者 | `parent.hinata@example.com` | `STU-7KQ3-92A` |
+| 生徒 | `student.hinata@example.com` | `STU-7KQ3-92A` |
+| 講師 | `teacher@gsc-juku.example.com` | `TCH-2026-GSC` |
+| 管理者 | `admin@gsc-juku.example.com` | `ADM-2026-GSC` |
 
 ## VS Code連携
 
@@ -36,6 +35,7 @@
 ## 開発起動
 
 ```bash
+pnpm install
 pnpm dev
 ```
 
@@ -52,9 +52,4 @@ PATH=/Users/michikooie/.cache/codex-runtimes/codex-primary-runtime/dependencies/
 pnpm build
 ```
 
-同梱Nodeを使う場合:
-
-```bash
-PATH=/Users/michikooie/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:/Users/michikooie/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin:$PATH \
-/Users/michikooie/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/pnpm build
-```
+ビルド後は `dist/server/index.js` が生成され、OpenAI Sitesへデプロイできる形式になります。
