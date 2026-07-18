@@ -120,7 +120,7 @@ const themes: Theme[] = [
     color: "#e31b5f",
     soft: "#fff0f6",
     icon: Flag,
-    image: "/gsc-assets/theme-1.png",
+    image: "/gsc-assets/theme-1.jpg",
     points: ["未来が行動の原動力になる", "目標が明確だと迷わず進める", "小さな目標の積み重ねが成果になる"],
     fields: ["長期目標", "中期目標", "短期目標"]
   },
@@ -131,7 +131,7 @@ const themes: Theme[] = [
     color: "#087a2e",
     soft: "#effaf0",
     icon: Eye,
-    image: "/gsc-assets/theme-2.png",
+    image: "/gsc-assets/theme-2.jpg",
     points: ["現状を知ることが第一歩", "課題が見えると改善の方向が定まる", "ギャップを認識すると行動が変わる"],
     fields: ["今の状況", "課題・足りないこと", "目標とのギャップ"]
   },
@@ -142,7 +142,7 @@ const themes: Theme[] = [
     color: "#105fba",
     soft: "#edf5ff",
     icon: Star,
-    image: "/gsc-assets/theme-3.png",
+    image: "/gsc-assets/theme-3.jpg",
     points: ["強みを活かすと成果が出やすい", "自信につながり行動が加速する", "周りからの信頼も得られる"],
     fields: ["得意なこと", "好きなこと", "人からよく言われること", "強みの活かし方"]
   },
@@ -153,7 +153,7 @@ const themes: Theme[] = [
     color: "#f26a00",
     soft: "#fff4ea",
     icon: Heart,
-    image: "/gsc-assets/theme-4.png",
+    image: "/gsc-assets/theme-4.jpg",
     points: ["誰かの役に立つことで価値が生まれる", "ニーズを知ると喜ばれるサービスになる", "価値提供が信頼と成果をつくる"],
     fields: ["誰を幸せにしたいか", "どんな課題を解決したいか", "どんな価値を提供するか", "相手に届けたい未来"]
   },
@@ -164,7 +164,7 @@ const themes: Theme[] = [
     color: "#0f61b7",
     soft: "#eef6ff",
     icon: LineChart,
-    image: "/gsc-assets/theme-5.png",
+    image: "/gsc-assets/theme-5.jpg",
     points: ["行動を振り返ることで成果につながる", "良かった行動と改善行動が分かる", "目標達成への行動を最適化できる"],
     fields: ["目標", "実際に取り組んだ行動", "成果につながった行動", "成果につながらなかった行動・原因", "改善ポイント"]
   },
@@ -175,7 +175,7 @@ const themes: Theme[] = [
     color: "#6d28a8",
     soft: "#f7efff",
     icon: Filter,
-    image: "/gsc-assets/theme-6.png",
+    image: "/gsc-assets/theme-6.jpg",
     points: ["すべてをやると成果が分散する", "集中すると成果が加速する", "強みにエネルギーを注げる"],
     fields: ["今週やること", "できればやること", "やらないこと", "やめること"]
   },
@@ -186,7 +186,7 @@ const themes: Theme[] = [
     color: "#7c3aed",
     soft: "#f5f0ff",
     icon: BarChart3,
-    image: "/gsc-assets/theme-7.png",
+    image: "/gsc-assets/theme-7.jpg",
     points: ["目標が明確になり行動精度が上がる", "進捗を数値で把握できる", "達成基準が明確になる"],
     fields: ["KGI", "KPI", "行動KPI"]
   },
@@ -197,7 +197,7 @@ const themes: Theme[] = [
     color: "#f05a00",
     soft: "#fff3e8",
     icon: Rocket,
-    image: "/gsc-assets/theme-8.png",
+    image: "/gsc-assets/theme-8.jpg",
     points: ["道筋が明確になる", "やるべき行動が具体化する", "小さな一歩が大きな成果につながる"],
     fields: ["中心の目標", "重要項目", "具体行動", "今週の優先順位"]
   }
@@ -341,7 +341,7 @@ function App() {
           </div>
           {state.mode === "business" ? (
             <figure className="hero-image">
-              <img src="/gsc-assets/gsc-utage.png" alt="GSC朝活の8テーマと月間スケジュール" />
+              <img src="/gsc-assets/gsc-utage.jpg" alt="GSC朝活の8テーマと月間スケジュール" />
             </figure>
           ) : (
             <div className="diet-flow">
