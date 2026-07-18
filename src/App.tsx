@@ -1,787 +1,1044 @@
-import { ChangeEvent, CSSProperties, FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity,
+  AlertTriangle,
   BarChart3,
-  Briefcase,
-  CalendarCheck2,
-  CalendarDays,
+  BookOpenCheck,
   CheckCircle2,
   ClipboardList,
   Copy,
-  Dumbbell,
-  Eye,
+  ExternalLink,
   FileImage,
-  Filter,
-  Flag,
-  Heart,
-  HeartPulse,
-  ImageUp,
-  Lightbulb,
-  LineChart,
-  MessageSquareText,
-  Moon,
-  Plus,
-  Rocket,
-  Save,
-  Scale,
-  Sparkles,
-  Star,
-  Sun,
-  Target,
-  Trash2,
-  Trophy,
-  type LucideIcon
+  FolderOpen,
+  GraduationCap,
+  KeyRound,
+  Link,
+  Lock,
+  LogOut,
+  Mail,
+  RefreshCw,
+  ShieldCheck,
+  UserRound,
+  UsersRound,
+  Wand2,
+  XCircle
 } from "lucide-react";
+import "./styles.css";
 
-type Mode = "business" | "diet";
-type Priority = "must" | "should" | "stop";
+type Role = "student" | "parent" | "teacher" | "admin";
+type Subject = "数学" | "英語";
+type Result = "correct" | "partial" | "incorrect";
+type FileStatus = "pending" | "analyzing" | "analyzed" | "error";
 
-type Theme = {
-  id: number;
-  title: string;
-  subtitle: string;
-  color: string;
-  soft: string;
-  icon: LucideIcon;
-  image: string;
-  points: string[];
-  fields: string[];
-};
-
-type Task = {
-  id: string;
-  mode: Mode;
-  text: string;
-  priority: Priority;
-  done: boolean;
-};
-
-type Metric = {
-  id: string;
-  mode: Mode;
+type DemoAccount = {
+  email: string;
+  secretId: string;
+  role: Role;
   label: string;
-  current: number;
-  target: number;
-  unit: string;
+  linkedStudentIds: string[];
 };
 
-type ThemeNote = {
-  fields: Record<string, string>;
-  learning: string;
-  declaration: string;
-  support: string;
+type MagicToken = {
+  token: string;
+  email: string;
+  secretId: string;
+  expiresAt: number;
+  used: boolean;
 };
 
-type DietGoal = {
-  image: string;
-  startDate: string;
-  startWeight: number;
-  targetWeight: number;
-  heightCm: number;
-  months: number;
-  purpose: string;
-  habits: string;
+type Session = {
+  email: string;
+  secretId: string;
+  role: Role;
+  linkedStudentIds: string[];
+  expiresAt: number;
 };
 
-type DietDraft = {
-  image: string;
-  fileName: string;
-  date: string;
-  month: number;
-  weight: number;
-  memo: string;
-};
-
-type DietCheckIn = DietDraft & {
+type DriveFile = {
   id: string;
-  advice: string[];
+  name: string;
+  capturedAt: string;
+  subject: Subject;
+  status: FileStatus;
 };
 
-type AppState = {
-  mode: Mode;
-  selectedTheme: number;
-  cycleStart: string;
-  tasks: Task[];
-  metrics: Metric[];
-  notes: Record<string, ThemeNote>;
-  dietGoal: DietGoal;
-  dietDraft: DietDraft;
-  dietCheckIns: DietCheckIn[];
+type UnitAnalysis = {
+  name: string;
+  correct: number;
+  partial: number;
+  total: number;
+  focus: string;
+  growth: string;
 };
 
-const STORAGE_KEY = "gsc-habit-loop-app-v2";
-const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+type QuestionAnalysis = {
+  number: number;
+  unit: string;
+  result: Result;
+  comment: string;
+};
 
-const themes: Theme[] = [
+type TestAnalysis = {
+  id: string;
+  title: string;
+  subject: Subject;
+  score: number;
+  maxScore: number;
+  average: number;
+  date: string;
+  files: DriveFile[];
+  units: UnitAnalysis[];
+  questions: QuestionAnalysis[];
+  nextPlan: string[];
+  teacherMemo: string;
+};
+
+type Student = {
+  id: string;
+  studentCode: string;
+  name: string;
+  grade: string;
+  guardian: string;
+  analyses: TestAnalysis[];
+};
+
+const TOKEN_STORE_KEY = "gsc-test-analysis-magic-tokens-v1";
+const SESSION_KEY = "gsc-test-analysis-session-v1";
+const TOKEN_TTL_MS = 15 * 60 * 1000;
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+
+const resultLabels: Record<Result, string> = {
+  correct: "正答",
+  partial: "部分点",
+  incorrect: "誤答"
+};
+
+const roleLabels: Record<Role, string> = {
+  student: "生徒",
+  parent: "保護者",
+  teacher: "講師",
+  admin: "管理者"
+};
+
+const demoAccounts: DemoAccount[] = [
   {
-    id: 1,
-    title: "目標設定",
-    subtitle: "どこを目指すのか？",
-    color: "#e31b5f",
-    soft: "#fff0f6",
-    icon: Flag,
-    image: "/gsc-assets/theme-1.png",
-    points: ["未来が行動の原動力になる", "目標が明確だと迷わず進める", "小さな目標の積み重ねが成果になる"],
-    fields: ["長期目標", "中期目標", "短期目標"]
+    email: "parent.hinata@example.com",
+    secretId: "STU-7KQ3-92A",
+    role: "parent",
+    label: "保護者アカウント",
+    linkedStudentIds: ["student-hinata"]
   },
   {
-    id: 2,
-    title: "現状把握",
-    subtitle: "今どこにいるのか？",
-    color: "#087a2e",
-    soft: "#effaf0",
-    icon: Eye,
-    image: "/gsc-assets/theme-2.png",
-    points: ["現状を知ることが第一歩", "課題が見えると改善の方向が定まる", "ギャップを認識すると行動が変わる"],
-    fields: ["今の状況", "課題・足りないこと", "目標とのギャップ"]
+    email: "student.hinata@example.com",
+    secretId: "STU-7KQ3-92A",
+    role: "student",
+    label: "生徒アカウント",
+    linkedStudentIds: ["student-hinata"]
   },
   {
-    id: 3,
-    title: "強み分析",
-    subtitle: "自分の強みを知り、活かし方を考える",
-    color: "#105fba",
-    soft: "#edf5ff",
-    icon: Star,
-    image: "/gsc-assets/theme-3.png",
-    points: ["強みを活かすと成果が出やすい", "自信につながり行動が加速する", "周りからの信頼も得られる"],
-    fields: ["得意なこと", "好きなこと", "人からよく言われること", "強みの活かし方"]
+    email: "teacher@gsc-juku.example.com",
+    secretId: "TCH-2026-GSC",
+    role: "teacher",
+    label: "講師アカウント",
+    linkedStudentIds: ["student-hinata", "student-ren"]
   },
   {
-    id: 4,
-    title: "価値・ニーズ分析",
-    subtitle: "誰のどんな課題を、どう解決するか",
-    color: "#f26a00",
-    soft: "#fff4ea",
-    icon: Heart,
-    image: "/gsc-assets/theme-4.png",
-    points: ["誰かの役に立つことで価値が生まれる", "ニーズを知ると喜ばれるサービスになる", "価値提供が信頼と成果をつくる"],
-    fields: ["誰を幸せにしたいか", "どんな課題を解決したいか", "どんな価値を提供するか", "相手に届けたい未来"]
-  },
-  {
-    id: 5,
-    title: "行動分析",
-    subtitle: "行動は目標につながっているか？",
-    color: "#0f61b7",
-    soft: "#eef6ff",
-    icon: LineChart,
-    image: "/gsc-assets/theme-5.png",
-    points: ["行動を振り返ることで成果につながる", "良かった行動と改善行動が分かる", "目標達成への行動を最適化できる"],
-    fields: ["目標", "実際に取り組んだ行動", "成果につながった行動", "成果につながらなかった行動・原因", "改善ポイント"]
-  },
-  {
-    id: 6,
-    title: "選択と集中",
-    subtitle: "やること・やらないことを決める",
-    color: "#6d28a8",
-    soft: "#f7efff",
-    icon: Filter,
-    image: "/gsc-assets/theme-6.png",
-    points: ["すべてをやると成果が分散する", "集中すると成果が加速する", "強みにエネルギーを注げる"],
-    fields: ["今週やること", "できればやること", "やらないこと", "やめること"]
-  },
-  {
-    id: 7,
-    title: "数値目標設定",
-    subtitle: "KGI・KPI・行動KPIを決める",
-    color: "#7c3aed",
-    soft: "#f5f0ff",
-    icon: BarChart3,
-    image: "/gsc-assets/theme-7.png",
-    points: ["目標が明確になり行動精度が上がる", "進捗を数値で把握できる", "達成基準が明確になる"],
-    fields: ["KGI", "KPI", "行動KPI"]
-  },
-  {
-    id: 8,
-    title: "アクションプラン",
-    subtitle: "具体的な行動に落とし込む",
-    color: "#f05a00",
-    soft: "#fff3e8",
-    icon: Rocket,
-    image: "/gsc-assets/theme-8.png",
-    points: ["道筋が明確になる", "やるべき行動が具体化する", "小さな一歩が大きな成果につながる"],
-    fields: ["中心の目標", "重要項目", "具体行動", "今週の優先順位"]
+    email: "admin@gsc-juku.example.com",
+    secretId: "ADM-2026-GSC",
+    role: "admin",
+    label: "管理者アカウント",
+    linkedStudentIds: ["student-hinata", "student-ren"]
   }
 ];
 
-const priorityText: Record<Priority, string> = {
-  must: "必ずやる",
-  should: "できればやる",
-  stop: "やらない"
-};
+const initialStudents: Student[] = [
+  {
+    id: "student-hinata",
+    studentCode: "STU-7KQ3-92A",
+    name: "佐藤ひなた",
+    grade: "中2",
+    guardian: "佐藤恵理",
+    analyses: [
+      {
+        id: "hinata-math-1",
+        title: "1学期期末テスト",
+        subject: "数学",
+        score: 68,
+        maxScore: 100,
+        average: 61,
+        date: "2026-07-05",
+        files: [
+          {
+            id: "file-hm-1",
+            name: "数学_1学期期末_答案1.jpg",
+            capturedAt: "2026-07-06 19:24",
+            subject: "数学",
+            status: "analyzed"
+          },
+          {
+            id: "file-hm-2",
+            name: "数学_1学期期末_答案2.jpg",
+            capturedAt: "2026-07-06 19:25",
+            subject: "数学",
+            status: "analyzed"
+          }
+        ],
+        units: [
+          {
+            name: "連立方程式",
+            correct: 5,
+            partial: 1,
+            total: 8,
+            focus: "文章題で式を立てる前の条件整理が弱点です。",
+            growth: "計算処理は安定しているので、演習量を増やすと得点源になります。"
+          },
+          {
+            name: "一次関数",
+            correct: 3,
+            partial: 2,
+            total: 7,
+            focus: "グラフから傾きを読む問題で取り違えが出ています。",
+            growth: "表と式の変換はできているため、図の読み取りを補強します。"
+          },
+          {
+            name: "資料の整理",
+            correct: 5,
+            partial: 0,
+            total: 5,
+            focus: "大きな弱点はありません。",
+            growth: "中央値と範囲の判断が速く、応用問題でさらに伸ばせます。"
+          }
+        ],
+        questions: [
+          {
+            number: 2,
+            unit: "連立方程式",
+            result: "correct",
+            comment: "代入法の計算は正確。途中式も読みやすいです。"
+          },
+          {
+            number: 5,
+            unit: "連立方程式",
+            result: "incorrect",
+            comment: "人数と金額の条件を逆に置いています。線を引いて条件分解しましょう。"
+          },
+          {
+            number: 8,
+            unit: "一次関数",
+            result: "partial",
+            comment: "式は合っていますが、グラフ上の切片の書き込みで減点されています。"
+          },
+          {
+            number: 12,
+            unit: "資料の整理",
+            result: "correct",
+            comment: "度数分布表から必要な値を素早く拾えています。"
+          }
+        ],
+        nextPlan: [
+          "連立方程式の文章題を10分演習で毎回3問",
+          "一次関数はグラフ、表、式を相互変換する練習",
+          "資料の整理は応用問題で満点維持を狙う"
+        ],
+        teacherMemo:
+          "正答できる問題の途中式はきれいです。弱点単元だけでなく、得点源の単元をさらに伸ばす時間も確保します。"
+      },
+      {
+        id: "hinata-english-1",
+        title: "1学期期末テスト",
+        subject: "英語",
+        score: 74,
+        maxScore: 100,
+        average: 66,
+        date: "2026-07-04",
+        files: [
+          {
+            id: "file-he-1",
+            name: "英語_1学期期末_答案.jpg",
+            capturedAt: "2026-07-06 19:31",
+            subject: "英語",
+            status: "analyzed"
+          }
+        ],
+        units: [
+          {
+            name: "不定詞",
+            correct: 6,
+            partial: 1,
+            total: 8,
+            focus: "名詞的用法と副詞的用法の見分けで迷いが出ています。",
+            growth: "基本文の語順は安定しています。"
+          },
+          {
+            name: "長文読解",
+            correct: 7,
+            partial: 1,
+            total: 9,
+            focus: "設問の根拠に線を引く習慣を作るとさらに安定します。",
+            growth: "本文の要点をつかむ力は強みです。"
+          },
+          {
+            name: "英作文",
+            correct: 2,
+            partial: 2,
+            total: 5,
+            focus: "三単現と時制の見落としが減点につながっています。",
+            growth: "使える表現は増えているため、添削後の書き直しで伸ばせます。"
+          }
+        ],
+        questions: [
+          {
+            number: 3,
+            unit: "不定詞",
+            result: "partial",
+            comment: "意味は取れていますが、用法名の選択で迷いがあります。"
+          },
+          {
+            number: 9,
+            unit: "長文読解",
+            result: "correct",
+            comment: "指示語の内容を正しく追えています。"
+          },
+          {
+            number: 14,
+            unit: "英作文",
+            result: "incorrect",
+            comment: "主語が三人称単数のときの動詞変化を確認しましょう。"
+          }
+        ],
+        nextPlan: [
+          "不定詞は例文を3分類して音読",
+          "長文は根拠線を引いてから選択肢を読む",
+          "英作文は1文ずつ時制と主語をチェック"
+        ],
+        teacherMemo:
+          "読解はよく伸びています。文法の小さなミスを減らせば80点台が見えます。"
+      }
+    ]
+  },
+  {
+    id: "student-ren",
+    studentCode: "STU-4NX8-11B",
+    name: "高橋れん",
+    grade: "中3",
+    guardian: "高橋真由",
+    analyses: [
+      {
+        id: "ren-math-1",
+        title: "実力確認テスト",
+        subject: "数学",
+        score: 82,
+        maxScore: 100,
+        average: 64,
+        date: "2026-07-07",
+        files: [
+          {
+            id: "file-rm-1",
+            name: "数学_実力確認_答案.jpg",
+            capturedAt: "2026-07-08 20:10",
+            subject: "数学",
+            status: "analyzed"
+          }
+        ],
+        units: [
+          {
+            name: "二次方程式",
+            correct: 7,
+            partial: 0,
+            total: 8,
+            focus: "解の公式で符号を急いで書くとミスがあります。",
+            growth: "因数分解で解ける形を見抜くのが得意です。"
+          },
+          {
+            name: "図形と相似",
+            correct: 5,
+            partial: 2,
+            total: 8,
+            focus: "証明の最後の結論文が不足しやすいです。",
+            growth: "相似条件の選択は正確です。"
+          },
+          {
+            name: "確率",
+            correct: 6,
+            partial: 0,
+            total: 6,
+            focus: "大きな弱点はありません。",
+            growth: "場合分けが整理されており、入試標準問題まで伸ばせます。"
+          }
+        ],
+        questions: [
+          {
+            number: 1,
+            unit: "二次方程式",
+            result: "correct",
+            comment: "因数分解の選択が速く、計算も安定しています。"
+          },
+          {
+            number: 7,
+            unit: "図形と相似",
+            result: "partial",
+            comment: "方針は合っています。証明の根拠を一文追加しましょう。"
+          },
+          {
+            number: 11,
+            unit: "確率",
+            result: "correct",
+            comment: "樹形図なしでも漏れなく整理できています。"
+          }
+        ],
+        nextPlan: [
+          "二次方程式は符号チェックの型を固定",
+          "図形証明は結論文テンプレートを練習",
+          "確率は入試レベルの複合問題へ進む"
+        ],
+        teacherMemo:
+          "基礎は十分に強いです。答案の説明力を上げると上位校対策に直結します。"
+      }
+    ]
+  }
+];
+
+function readTokens(): MagicToken[] {
+  try {
+    const raw = localStorage.getItem(TOKEN_STORE_KEY);
+    return raw ? (JSON.parse(raw) as MagicToken[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeTokens(tokens: MagicToken[]) {
+  localStorage.setItem(TOKEN_STORE_KEY, JSON.stringify(tokens));
+}
+
+function readSession(): Session | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw) as Session;
+    if (session.expiresAt <= Date.now()) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+function createToken() {
+  const random = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function formatPercent(unit: UnitAnalysis) {
+  return Math.round(((unit.correct + unit.partial * 0.5) / unit.total) * 100);
+}
+
+function statusLabel(status: FileStatus) {
+  if (status === "analyzed") return "解析済み";
+  if (status === "analyzing") return "解析中";
+  if (status === "pending") return "待機中";
+  return "要確認";
+}
 
 function App() {
-  const [state, setState] = useState<AppState>(() => loadState());
-  const [taskText, setTaskText] = useState("");
-  const [taskPriority, setTaskPriority] = useState<Priority>("must");
-  const [copyLabel, setCopyLabel] = useState("コピー");
+  const [students, setStudents] = useState(initialStudents);
+  const [session, setSession] = useState<Session | null>(() => readSession());
+  const [email, setEmail] = useState(demoAccounts[0].email);
+  const [secretId, setSecretId] = useState(demoAccounts[0].secretId);
+  const [tokens, setTokens] = useState<MagicToken[]>(() => readTokens());
+  const [loginMessage, setLoginMessage] = useState("");
+  const [copiedToken, setCopiedToken] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState(initialStudents[0].id);
+  const [selectedSubject, setSelectedSubject] = useState<Subject>("数学");
+  const [auditResult, setAuditResult] = useState("未実行");
+  const [syncMessage, setSyncMessage] = useState("Google Driveフォルダは未接続です");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const selectedTheme = themes.find((theme) => theme.id === state.selectedTheme) ?? themes[0];
-  const activeTasks = state.tasks.filter((task) => task.mode === state.mode);
-  const activeMetrics = state.metrics.filter((metric) => metric.mode === state.mode);
-  const note = state.notes[String(selectedTheme.id)] ?? emptyNote();
-  const businessProgress = activeTasks.length ? Math.round((activeTasks.filter((task) => task.done).length / activeTasks.length) * 100) : 0;
-  const dietStats = getDietStats(state);
-  const prompt = buildCoachPrompt(state, selectedTheme, note, activeTasks, activeMetrics);
-  const schedule = buildMonthlySchedule(state.cycleStart);
-  const themeStyle = {
-    "--theme": state.mode === "business" ? selectedTheme.color : "#0f766e",
-    "--theme-soft": state.mode === "business" ? selectedTheme.soft : "#ecfdf5"
-  } as CSSProperties;
+  useEffect(() => {
+    writeTokens(tokens);
+  }, [tokens]);
 
-  function update(partial: Partial<AppState>) {
-    setState((current) => {
-      const next = { ...current, ...partial };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      return next;
-    });
-  }
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get("token");
+    if (token) {
+      consumeToken(token);
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
-  function updateNote(updater: (note: ThemeNote) => ThemeNote) {
-    update({
-      notes: {
-        ...state.notes,
-        [String(selectedTheme.id)]: updater(note)
-      }
-    });
-  }
+  const activeTokens = useMemo(
+    () => tokens.filter((token) => !token.used && token.expiresAt > Date.now()),
+    [tokens]
+  );
 
-  function addTask(event: FormEvent) {
+  const visibleStudents = useMemo(() => {
+    if (!session) return [];
+    if (session.role === "teacher" || session.role === "admin") return students;
+    return students.filter((student) => session.linkedStudentIds.includes(student.id));
+  }, [session, students]);
+
+  useEffect(() => {
+    if (visibleStudents.length > 0 && !visibleStudents.some((student) => student.id === selectedStudentId)) {
+      setSelectedStudentId(visibleStudents[0].id);
+    }
+  }, [selectedStudentId, visibleStudents]);
+
+  const selectedStudent = visibleStudents.find((student) => student.id === selectedStudentId) ?? visibleStudents[0];
+
+  const selectedAnalysis = selectedStudent?.analyses.find((analysis) => analysis.subject === selectedSubject);
+  const pendingFiles = selectedStudent?.analyses.flatMap((analysis) => analysis.files).filter((file) => file.status !== "analyzed").length ?? 0;
+
+  function issueMagicLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!taskText.trim()) return;
-    update({
-      tasks: [
-        {
-          id: id("task"),
-          mode: state.mode,
-          text: taskText.trim(),
-          priority: taskPriority,
-          done: false
-        },
-        ...state.tasks
-      ]
-    });
-    setTaskText("");
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedSecret = secretId.trim();
+    const account = demoAccounts.find(
+      (item) => item.email === normalizedEmail && item.secretId === normalizedSecret
+    );
+
+    if (!account) {
+      setLoginMessage("登録済みメールアドレスとIDの組み合わせが見つかりません。");
+      return;
+    }
+
+    const token: MagicToken = {
+      token: createToken(),
+      email: account.email,
+      secretId: account.secretId,
+      expiresAt: Date.now() + TOKEN_TTL_MS,
+      used: false
+    };
+    setTokens((current) => [token, ...current.filter((item) => item.expiresAt > Date.now()).slice(0, 4)]);
+    setLoginMessage("デモ受信箱にログインURLを発行しました。");
   }
 
-  function updateTask(taskId: string, partial: Partial<Task>) {
-    update({
-      tasks: state.tasks.map((task) => (task.id === taskId ? { ...task, ...partial } : task))
-    });
+  function consumeToken(tokenValue: string) {
+    const found = readTokens().find((item) => item.token === tokenValue);
+    if (!found || found.used || found.expiresAt <= Date.now()) {
+      setLoginMessage("ログインURLが無効、または有効期限切れです。");
+      return;
+    }
+
+    const account = demoAccounts.find(
+      (item) => item.email === found.email && item.secretId === found.secretId
+    );
+    if (!account) {
+      setLoginMessage("このURLのアカウントが見つかりません。");
+      return;
+    }
+
+    const nextSession: Session = {
+      email: account.email,
+      secretId: account.secretId,
+      role: account.role,
+      linkedStudentIds: account.linkedStudentIds,
+      expiresAt: Date.now() + SESSION_TTL_MS
+    };
+
+    localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+    setSession(nextSession);
+    setTokens((current) =>
+      current.map((item) => (item.token === tokenValue ? { ...item, used: true } : item))
+    );
+    setLoginMessage("");
+    setSelectedStudentId(account.linkedStudentIds[0] ?? initialStudents[0].id);
   }
 
-  function removeTask(taskId: string) {
-    update({ tasks: state.tasks.filter((task) => task.id !== taskId) });
+  function logout() {
+    localStorage.removeItem(SESSION_KEY);
+    setSession(null);
+    setAuditResult("未実行");
   }
 
-  function updateMetric(metricId: string, partial: Partial<Metric>) {
-    update({
-      metrics: state.metrics.map((metric) => (metric.id === metricId ? { ...metric, ...partial } : metric))
-    });
+  function tokenUrl(token: string) {
+    return `${window.location.origin}${window.location.pathname}?token=${token}`;
   }
 
-  function addMetric() {
-    update({
-      metrics: [...state.metrics, { id: id("metric"), mode: state.mode, label: state.mode === "diet" ? "運動" : "商談", current: 0, target: 10, unit: "回" }]
-    });
+  async function copyToken(token: string) {
+    const url = tokenUrl(token);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedToken(token);
+    } catch {
+      setCopiedToken("");
+    }
   }
 
-  async function setDietGoalImage(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    update({ dietGoal: { ...state.dietGoal, image: await imageToDataUrl(file) } });
+  function runDriveSync() {
+    setSyncMessage("Google Driveの答案フォルダを確認中...");
+    window.setTimeout(() => {
+      setSyncMessage("3件の答案写真を確認しました。新規ファイルは自動解析待ちに入ります。");
+    }, 650);
   }
 
-  async function setDietDraftImage(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    update({ dietDraft: { ...state.dietDraft, image: await imageToDataUrl(file), fileName: file.name, date: today() } });
+  function runAccessAudit() {
+    if (!session) return;
+    const blockedStudent = students.find((student) => !session.linkedStudentIds.includes(student.id));
+    if (session.role === "student" || session.role === "parent") {
+      setAuditResult(
+        blockedStudent
+          ? `${blockedStudent.studentCode} への参照を拒否しました。API想定: 403 Forbidden`
+          : "閲覧可能な生徒だけが返却されています。"
+      );
+      return;
+    }
+    setAuditResult("講師・管理者ロールとして全生徒の閲覧を許可しています。操作ログを保存します。");
   }
 
-  function saveDietCheckIn() {
-    if (!state.dietDraft.image) return;
-    const advice = buildDietAdvice(state);
-    update({
-      dietCheckIns: [{ ...state.dietDraft, id: id("diet"), advice }, ...state.dietCheckIns].slice(0, 24),
-      dietDraft: { ...state.dietDraft, image: "", fileName: "", memo: "" }
-    });
+  function handleFiles(files: FileList | null) {
+    if (!files || !selectedStudent) return;
+    const nextFiles: DriveFile[] = Array.from(files).map((file, index) => ({
+      id: `local-${Date.now()}-${index}`,
+      name: file.name,
+      capturedAt: new Date().toLocaleString("ja-JP", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }),
+      subject: selectedSubject,
+      status: "analyzing"
+    }));
+
+    setStudents((current) =>
+      current.map((student) => {
+        if (student.id !== selectedStudent.id) return student;
+        return {
+          ...student,
+          analyses: student.analyses.map((analysis) =>
+            analysis.subject === selectedSubject
+              ? { ...analysis, files: [...nextFiles, ...analysis.files] }
+              : analysis
+          )
+        };
+      })
+    );
+    setSyncMessage(`${nextFiles.length}件の答案写真を追加しました。解析結果は自動更新されます。`);
   }
 
-  async function copyPrompt() {
-    await navigator.clipboard.writeText(prompt);
-    setCopyLabel("コピー済み");
-    window.setTimeout(() => setCopyLabel("コピー"), 1400);
+  if (!session) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-panel">
+          <div className="brand-line">
+            <span className="brand-mark">
+              <GraduationCap size={28} />
+            </span>
+            <div>
+              <p className="eyebrow">GSC学習塾</p>
+              <h1>定期テスト現状分析</h1>
+            </div>
+          </div>
+
+          <div className="auth-grid">
+            <form className="login-card" onSubmit={issueMagicLink}>
+              <div>
+                <p className="section-kicker">Magic Link Login</p>
+                <h2>メールで届くURLから安全にログイン</h2>
+                <p className="muted">
+                  登録済みメールアドレスと生徒ID、または先生IDの組み合わせだけでURLを発行します。
+                </p>
+              </div>
+
+              <label>
+                メールアドレス
+                <span className="input-shell">
+                  <Mail size={18} />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    autoComplete="email"
+                  />
+                </span>
+              </label>
+
+              <label>
+                生徒ID / 先生ID
+                <span className="input-shell">
+                  <KeyRound size={18} />
+                  <input value={secretId} onChange={(event) => setSecretId(event.target.value)} />
+                </span>
+              </label>
+
+              <button className="primary-button" type="submit">
+                <Link size={18} />
+                ログインURLを送信
+              </button>
+
+              {loginMessage ? <p className="form-message">{loginMessage}</p> : null}
+
+              <div className="security-list" aria-label="セキュリティ方針">
+                <span>
+                  <ShieldCheck size={16} />
+                  15分で失効
+                </span>
+                <span>
+                  <Lock size={16} />
+                  1回使用
+                </span>
+                <span>
+                  <UsersRound size={16} />
+                  生徒単位で権限制御
+                </span>
+              </div>
+            </form>
+
+            <aside className="mail-preview">
+              <div className="panel-heading">
+                <div>
+                  <p className="section-kicker">Demo inbox</p>
+                  <h2>デモ受信箱</h2>
+                </div>
+                <Mail size={22} />
+              </div>
+
+              {activeTokens.length === 0 ? (
+                <div className="empty-state">
+                  <p>ログインURLはまだ届いていません。</p>
+                  <span>左のフォームから発行すると、ここに表示されます。</span>
+                </div>
+              ) : (
+                activeTokens.map((token) => (
+                  <article className="mail-item" key={token.token}>
+                    <div>
+                      <strong>{token.email}</strong>
+                      <p>有効期限: {new Date(token.expiresAt).toLocaleTimeString("ja-JP")}</p>
+                    </div>
+                    <div className="mail-actions">
+                      <button type="button" onClick={() => consumeToken(token.token)}>
+                        <ExternalLink size={16} />
+                        URLを開く
+                      </button>
+                      <button type="button" onClick={() => copyToken(token.token)} aria-label="ログインURLをコピー">
+                        <Copy size={16} />
+                        {copiedToken === token.token ? "コピー済み" : "コピー"}
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+
+              <div className="demo-accounts">
+                <p className="section-kicker">登録済みアカウント</p>
+                {demoAccounts.map((account) => (
+                  <button
+                    type="button"
+                    key={account.email}
+                    onClick={() => {
+                      setEmail(account.email);
+                      setSecretId(account.secretId);
+                    }}
+                  >
+                    <span>{account.label}</span>
+                    <strong>{account.email}</strong>
+                    <small>{account.secretId}</small>
+                  </button>
+                ))}
+              </div>
+            </aside>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   return (
-    <div className="app-shell" style={themeStyle}>
+    <main className="app-shell">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark"><Sun size={25} /></span>
+        <div className="brand-line">
+          <span className="brand-mark">
+            <GraduationCap size={28} />
+          </span>
           <div>
-            <p className="eyebrow">GSC Habit Loop</p>
-            <h1>GSC 頑張らない習慣化</h1>
+            <p className="eyebrow">定期テスト現状分析</p>
+            <h1>GSC学習塾 管理ダッシュボード</h1>
           </div>
         </div>
-        <div className="mode-switch">
-          <button className={state.mode === "business" ? "active" : ""} onClick={() => update({ mode: "business" })}>
-            <Briefcase size={18} /> ビジネス
-          </button>
-          <button className={state.mode === "diet" ? "active" : ""} onClick={() => update({ mode: "diet" })}>
-            <HeartPulse size={18} /> ダイエット
+        <div className="session-box">
+          <span>
+            <UserRound size={16} />
+            {roleLabels[session.role]}: {session.email}
+          </span>
+          <button type="button" onClick={logout} aria-label="ログアウト">
+            <LogOut size={18} />
+            ログアウト
           </button>
         </div>
       </header>
 
-      <main className="dashboard">
-        <section className="hero">
-          <div className="hero-copy">
-            <p className="program-pill"><Sparkles size={16} /> 見える化 × 振り返り × 行動習慣</p>
-            <h2>毎日使って、成果につながる行動を増やす。</h2>
-            <p>{state.mode === "business" ? "ビジネス拡大のために、週2回×4週の8テーマで行動を整えます。" : "3ヶ月目標と月1枚の体重管理表で、無理なく続く健康習慣を作ります。"}</p>
-          </div>
-          {state.mode === "business" ? (
-            <figure className="hero-image">
-              <img src="/gsc-assets/gsc-utage.png" alt="GSC朝活の8テーマと月間スケジュール" />
-            </figure>
-          ) : (
-            <div className="diet-flow">
-              <FlowStep no="1" title="3ヶ月目標" text={`${state.dietGoal.startWeight}kg から ${state.dietGoal.targetWeight}kgへ`} />
-              <FlowStep no="2" title="月1枚の管理表" text={`${state.dietDraft.month}ヶ月目を記録`} />
-              <FlowStep no="3" title="週2回アップロード" text={`今週 ${dietStats.uploadsThisWeek}/2 回`} />
-              <FlowStep no="4" title="アドバイス" text="写真・体重・メモから次の一手へ" />
+      <section className="dashboard">
+        <section className="metric-grid" aria-label="概要">
+          <article className="metric-tile">
+            <UsersRound size={22} />
+            <div>
+              <strong>{visibleStudents.length}</strong>
+              <span>閲覧可能な生徒</span>
             </div>
-          )}
+          </article>
+          <article className="metric-tile">
+            <FileImage size={22} />
+            <div>
+              <strong>{pendingFiles}</strong>
+              <span>未解析ファイル</span>
+            </div>
+          </article>
+          <article className="metric-tile">
+            <RefreshCw size={22} />
+            <div>
+              <strong>手動同期</strong>
+              <span>{syncMessage}</span>
+            </div>
+          </article>
+          <article className="metric-tile">
+            <Lock size={22} />
+            <div>
+              <strong>8時間</strong>
+              <span>セッション有効期限</span>
+            </div>
+          </article>
         </section>
 
-        <section className="summary-grid">
-          <MetricTile icon={state.mode === "business" ? CheckCircle2 : Target} label={state.mode === "business" ? "今日の精度" : "3ヶ月目標"} value={state.mode === "business" ? `${businessProgress}%` : `${state.dietGoal.targetWeight}kg`} />
-          <MetricTile icon={state.mode === "business" ? BarChart3 : Scale} label={state.mode === "business" ? "KPI平均" : "減量進捗"} value={state.mode === "business" ? `${metricAverage(activeMetrics)}%` : `${dietStats.progress}%`} />
-          <MetricTile icon={state.mode === "business" ? Trophy : ImageUp} label={state.mode === "business" ? "月間テーマ" : "今週アップ"} value={state.mode === "business" ? `${selectedTheme.id}/8` : `${dietStats.uploadsThisWeek}/2`} />
-          <MetricTile icon={state.mode === "business" ? Briefcase : Dumbbell} label={state.mode === "business" ? "現在の軸" : "現在体重"} value={state.mode === "business" ? "ビジネス" : `${dietStats.currentWeight.toFixed(1)}kg`} />
-        </section>
+        <section className="workspace-grid">
+          <aside className="side-column">
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="section-kicker">Students</p>
+                  <h2>生徒を選択</h2>
+                </div>
+                <UsersRound size={20} />
+              </div>
+              <div className="student-list">
+                {visibleStudents.map((student) => (
+                  <button
+                    type="button"
+                    className={student.id === selectedStudent?.id ? "student-item active" : "student-item"}
+                    key={student.id}
+                    onClick={() => setSelectedStudentId(student.id)}
+                  >
+                    <span>{student.grade}</span>
+                    <strong>{student.name}</strong>
+                    <small>{student.studentCode}</small>
+                  </button>
+                ))}
+              </div>
+            </section>
 
-        {state.mode === "business" ? (
-          <BusinessView
-            schedule={schedule}
-            selectedTheme={selectedTheme}
-            note={note}
-            onThemeSelect={(themeId) => update({ selectedTheme: themeId })}
-            onCycleStart={(cycleStart) => update({ cycleStart })}
-            onNoteChange={updateNote}
-          />
-        ) : (
-          <DietView
-            state={state}
-            stats={dietStats}
-            onGoalImage={setDietGoalImage}
-            onDraftImage={setDietDraftImage}
-            onGoalChange={(dietGoal) => update({ dietGoal })}
-            onDraftChange={(dietDraft) => update({ dietDraft })}
-            onSave={saveDietCheckIn}
-            onDelete={(checkInId) => update({ dietCheckIns: state.dietCheckIns.filter((checkIn) => checkIn.id !== checkInId) })}
-          />
-        )}
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="section-kicker">Google Drive</p>
+                  <h2>答案写真の同期</h2>
+                </div>
+                <FolderOpen size={20} />
+              </div>
+              <p className="muted">
+                本番では生徒別フォルダをOAuthで接続し、新しい写真を検知して解析キューに入れます。
+              </p>
+              <div className="drive-actions">
+                <button className="primary-button" type="button" onClick={runDriveSync}>
+                  <RefreshCw size={18} />
+                  Drive同期
+                </button>
+                <button className="secondary-button" type="button" onClick={() => fileInputRef.current?.click()}>
+                  <FileImage size={18} />
+                  写真を追加
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  hidden
+                  onChange={(event) => handleFiles(event.target.files)}
+                />
+              </div>
+              <p className="sync-message">{syncMessage}</p>
+            </section>
 
-        <section className="bottom-grid">
-          <ActionPanel
-            tasks={activeTasks}
-            metrics={activeMetrics}
-            taskText={taskText}
-            taskPriority={taskPriority}
-            onTaskText={setTaskText}
-            onTaskPriority={setTaskPriority}
-            onAddTask={addTask}
-            onUpdateTask={updateTask}
-            onRemoveTask={removeTask}
-            onAddMetric={addMetric}
-            onUpdateMetric={updateMetric}
-          />
-          <section className="panel coach-panel">
-            <div className="section-title"><MessageSquareText size={18} /><h3>AIコーチ用メモ</h3></div>
-            <textarea value={prompt} readOnly rows={12} />
-            <button className="secondary-button" onClick={copyPrompt}><Copy size={17} />{copyLabel}</button>
+            <section className="panel access-panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="section-kicker">Security</p>
+                  <h2>権限監査</h2>
+                </div>
+                <ShieldCheck size={20} />
+              </div>
+              <button className="secondary-button" type="button" onClick={runAccessAudit}>
+                <Lock size={18} />
+                他生徒IDの参照テスト
+              </button>
+              <p>{auditResult}</p>
+            </section>
+          </aside>
+
+          <section className="main-column">
+            {selectedStudent && selectedAnalysis ? (
+              <>
+                <section className="student-summary">
+                  <div>
+                    <p className="section-kicker">{selectedStudent.grade} / {selectedStudent.studentCode}</p>
+                    <h2>{selectedStudent.name}さんの分析結果</h2>
+                    <p className="muted">保護者: {selectedStudent.guardian}さん</p>
+                  </div>
+                  <div className="subject-tabs" role="tablist" aria-label="教科を選択">
+                    {(["数学", "英語"] as Subject[]).map((subject) => (
+                      <button
+                        type="button"
+                        key={subject}
+                        className={selectedSubject === subject ? "active" : ""}
+                        onClick={() => setSelectedSubject(subject)}
+                      >
+                        {subject}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="analysis-grid">
+                  <article className="score-panel">
+                    <div className="score-ring" style={{ "--score": `${selectedAnalysis.score}%` } as React.CSSProperties}>
+                      <strong>{selectedAnalysis.score}</strong>
+                      <span>/ {selectedAnalysis.maxScore}</span>
+                    </div>
+                    <div>
+                      <p className="section-kicker">{selectedAnalysis.title}</p>
+                      <h2>{selectedAnalysis.subject} {selectedAnalysis.date}</h2>
+                      <p className="muted">平均との差: +{selectedAnalysis.score - selectedAnalysis.average}点</p>
+                    </div>
+                  </article>
+
+                  <article className="recommend-panel">
+                    <div className="panel-heading compact">
+                      <div>
+                        <p className="section-kicker">Priority</p>
+                        <h2>次回の学習方針</h2>
+                      </div>
+                      <Wand2 size={20} />
+                    </div>
+                    <ol>
+                      {selectedAnalysis.nextPlan.map((plan) => (
+                        <li key={plan}>{plan}</li>
+                      ))}
+                    </ol>
+                  </article>
+                </section>
+
+                <section className="panel">
+                  <div className="panel-heading">
+                    <div>
+                      <p className="section-kicker">Unit analysis</p>
+                      <h2>単元別の強みと弱み</h2>
+                    </div>
+                    <BarChart3 size={20} />
+                  </div>
+                  <div className="unit-list">
+                    {selectedAnalysis.units.map((unit) => {
+                      const percent = formatPercent(unit);
+                      return (
+                        <article className="unit-row" key={unit.name}>
+                          <div className="unit-score">
+                            <strong>{percent}%</strong>
+                            <span>
+                              {unit.correct}+{unit.partial} / {unit.total}
+                            </span>
+                          </div>
+                          <div className="unit-detail">
+                            <h3>{unit.name}</h3>
+                            <p>
+                              <AlertTriangle size={15} />
+                              {unit.focus}
+                            </p>
+                            <p>
+                              <CheckCircle2 size={15} />
+                              {unit.growth}
+                            </p>
+                          </div>
+                          <div className="unit-meter" aria-label={`${unit.name} ${percent}%`}>
+                            <span style={{ width: `${percent}%` }} />
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className="panel">
+                  <div className="panel-heading">
+                    <div>
+                      <p className="section-kicker">Question review</p>
+                      <h2>問題別チェック</h2>
+                    </div>
+                    <ClipboardList size={20} />
+                  </div>
+                  <div className="question-list">
+                    {selectedAnalysis.questions.map((question) => (
+                      <article className={`question-row ${question.result}`} key={`${question.unit}-${question.number}`}>
+                        <span className="question-number">問{question.number}</span>
+                        <strong>{question.unit}</strong>
+                        <span className="result-label">
+                          {question.result === "correct" ? <CheckCircle2 size={16} /> : null}
+                          {question.result === "partial" ? <AlertTriangle size={16} /> : null}
+                          {question.result === "incorrect" ? <XCircle size={16} /> : null}
+                          {resultLabels[question.result]}
+                        </span>
+                        <p>{question.comment}</p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="two-column">
+                  <article className="panel">
+                    <div className="panel-heading compact">
+                      <div>
+                        <p className="section-kicker">Files</p>
+                        <h2>解析対象ファイル</h2>
+                      </div>
+                      <FileImage size={20} />
+                    </div>
+                    <div className="file-list">
+                      {selectedAnalysis.files.map((file) => (
+                        <div className="file-status" key={file.id}>
+                          <FileImage size={18} />
+                          <div>
+                            <strong>{file.name}</strong>
+                            <span>{file.capturedAt}</span>
+                          </div>
+                          <small className={file.status}>{statusLabel(file.status)}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="panel teacher-memo">
+                    <div className="panel-heading compact">
+                      <div>
+                        <p className="section-kicker">Teacher note</p>
+                        <h2>先生メモ</h2>
+                      </div>
+                      <BookOpenCheck size={20} />
+                    </div>
+                    <p>{selectedAnalysis.teacherMemo}</p>
+                  </article>
+                </section>
+              </>
+            ) : (
+              <section className="panel empty-state">
+                <h2>この教科の分析はまだありません。</h2>
+                <p>答案写真が同期されると、強み、弱み、次回学習方針がここに表示されます。</p>
+              </section>
+            )}
           </section>
         </section>
-      </main>
-    </div>
-  );
-}
-
-function BusinessView({ schedule, selectedTheme, note, onThemeSelect, onCycleStart, onNoteChange }: {
-  schedule: Array<{ date: string; themeId: number }>;
-  selectedTheme: Theme;
-  note: ThemeNote;
-  onThemeSelect: (themeId: number) => void;
-  onCycleStart: (date: string) => void;
-  onNoteChange: (updater: (note: ThemeNote) => ThemeNote) => void;
-}) {
-  const Icon = selectedTheme.icon;
-  return (
-    <section className="business-layout">
-      <aside className="panel cycle-panel">
-        <div className="section-title"><CalendarDays size={18} /><h3>週2回×4週の8テーマ</h3></div>
-        <label className="field">
-          <span>1回目の開始日</span>
-          <input type="date" onChange={(event) => onCycleStart(event.target.value)} />
-        </label>
-        <div className="theme-list">
-          {themes.map((theme) => {
-            const ThemeIcon = theme.icon;
-            return (
-              <button key={theme.id} className={theme.id === selectedTheme.id ? "theme-row active" : "theme-row"} onClick={() => onThemeSelect(theme.id)}>
-                <strong>{theme.id}</strong><ThemeIcon size={18} /><span>{theme.title}</span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="schedule-list">
-          {schedule.map((item) => (
-            <button key={`${item.date}-${item.themeId}`} onClick={() => onThemeSelect(item.themeId)}>
-              <span>{formatDate(item.date)}</span><strong>{item.themeId}. {themes[item.themeId - 1].title}</strong>
-            </button>
-          ))}
-        </div>
-      </aside>
-
-      <section className="panel worksheet-panel">
-        <div className="theme-header">
-          <div>
-            <span>テーマ {selectedTheme.id}</span>
-            <h2>{selectedTheme.title}</h2>
-            <p>{selectedTheme.subtitle}</p>
-          </div>
-          <Icon size={46} />
-        </div>
-        <div className="point-grid">
-          {selectedTheme.points.map((point) => <div key={point}><Lightbulb size={17} />{point}</div>)}
-        </div>
-        <div className="worksheet-grid">
-          <div>
-            {selectedTheme.fields.map((field) => (
-              <label className="field" key={field}>
-                <span>{field}</span>
-                <textarea value={note.fields[field] ?? ""} onChange={(event) => onNoteChange((current) => ({ ...current, fields: { ...current.fields, [field]: event.target.value } }))} rows={2} />
-              </label>
-            ))}
-          </div>
-          <figure><img src={selectedTheme.image} alt={`${selectedTheme.title}ワークシート`} /></figure>
-        </div>
-        <div className="reflection-grid">
-          <label className="field"><span>今週の気づき・学び</span><textarea value={note.learning} onChange={(event) => onNoteChange((current) => ({ ...current, learning: event.target.value }))} rows={3} /></label>
-          <label className="field"><span>今週の行動宣言</span><textarea value={note.declaration} onChange={(event) => onNoteChange((current) => ({ ...current, declaration: event.target.value }))} rows={3} /></label>
-          <label className="field"><span>今週の応援宣言</span><textarea value={note.support} onChange={(event) => onNoteChange((current) => ({ ...current, support: event.target.value }))} rows={3} /></label>
-        </div>
       </section>
-    </section>
+    </main>
   );
-}
-
-function DietView({ state, stats, onGoalImage, onDraftImage, onGoalChange, onDraftChange, onSave, onDelete }: {
-  state: AppState;
-  stats: ReturnType<typeof getDietStats>;
-  onGoalImage: (event: ChangeEvent<HTMLInputElement>) => void;
-  onDraftImage: (event: ChangeEvent<HTMLInputElement>) => void;
-  onGoalChange: (goal: DietGoal) => void;
-  onDraftChange: (draft: DietDraft) => void;
-  onSave: () => void;
-  onDelete: (id: string) => void;
-}) {
-  const advice = state.dietDraft.image ? buildDietAdvice(state) : state.dietCheckIns[0]?.advice ?? ["体重管理表の写真をアップロードすると、進捗とメモに合わせたアドバイスを表示します。"];
-  return (
-    <section className="diet-panel panel">
-      <div className="diet-heading">
-        <div><p className="eyebrow">Diet Sheet Flow</p><h2>3ヶ月目標シートと体重管理表</h2></div>
-        <span><CalendarCheck2 size={17} /> 月1枚の管理表 / 週2回アップロード</span>
-      </div>
-      <div className="diet-grid">
-        <section className="diet-card">
-          <div className="section-title"><FileImage size={18} /><h3>3ヶ月目標設定シート</h3></div>
-          <label className="upload-box"><input type="file" accept="image/*" onChange={onGoalImage} /><ImageUp size={22} />目標シートをアップロード</label>
-          {state.dietGoal.image && <img className="sheet-image" src={state.dietGoal.image} alt="目標設定シート" />}
-          <div className="form-grid">
-            <NumberField label="身長 cm" value={state.dietGoal.heightCm} onChange={(value) => onGoalChange({ ...state.dietGoal, heightCm: value })} />
-            <NumberField label="開始体重 kg" value={state.dietGoal.startWeight} onChange={(value) => onGoalChange({ ...state.dietGoal, startWeight: value })} />
-            <NumberField label="目標体重 kg" value={state.dietGoal.targetWeight} onChange={(value) => onGoalChange({ ...state.dietGoal, targetWeight: value })} />
-            <NumberField label="期間 ヶ月" value={state.dietGoal.months} onChange={(value) => onGoalChange({ ...state.dietGoal, months: value })} />
-          </div>
-          <label className="field"><span>目的</span><textarea value={state.dietGoal.purpose} onChange={(event) => onGoalChange({ ...state.dietGoal, purpose: event.target.value })} rows={2} /></label>
-          <label className="field"><span>続ける習慣</span><textarea value={state.dietGoal.habits} onChange={(event) => onGoalChange({ ...state.dietGoal, habits: event.target.value })} rows={3} /></label>
-        </section>
-
-        <section className="diet-card">
-          <div className="section-title"><Scale size={18} /><h3>体重管理表アップロード</h3></div>
-          <label className="upload-box"><input type="file" accept="image/*" onChange={onDraftImage} /><ImageUp size={22} />管理表の写真をアップロード</label>
-          {state.dietDraft.image && <img className="sheet-image" src={state.dietDraft.image} alt="体重管理表" />}
-          <div className="form-grid">
-            <label className="field"><span>記録日</span><input type="date" value={state.dietDraft.date} onChange={(event) => onDraftChange({ ...state.dietDraft, date: event.target.value })} /></label>
-            <NumberField label="何ヶ月目" value={state.dietDraft.month} onChange={(value) => onDraftChange({ ...state.dietDraft, month: value })} />
-            <NumberField label="現在体重 kg" value={state.dietDraft.weight} onChange={(value) => onDraftChange({ ...state.dietDraft, weight: value })} />
-          </div>
-          <label className="field"><span>写真から読めたこと・本人メモ</span><textarea value={state.dietDraft.memo} onChange={(event) => onDraftChange({ ...state.dietDraft, memo: event.target.value })} rows={4} /></label>
-          <button className="primary-button full" disabled={!state.dietDraft.image} onClick={onSave}><Save size={17} />アップロード記録を保存</button>
-        </section>
-
-        <section className="diet-card">
-          <div className="section-title"><MessageSquareText size={18} /><h3>アドバイス</h3></div>
-          <div className="diet-stats">
-            <span>減量 {stats.lost.toFixed(1)}kg</span><span>残り {stats.remaining.toFixed(1)}kg</span><span>BMI {bmi(stats.currentWeight, state.dietGoal.heightCm).toFixed(1)}</span><span>今週 {stats.uploadsThisWeek}/2</span>
-          </div>
-          <ul className="advice-list">{advice.map((item) => <li key={item}>{item}</li>)}</ul>
-        </section>
-      </div>
-
-      <div className="history">
-        <div className="section-title"><ClipboardList size={18} /><h3>体重管理表の履歴</h3></div>
-        {state.dietCheckIns.length === 0 ? <p className="muted">まだアップロード記録がありません。</p> : (
-          <div className="history-grid">
-            {state.dietCheckIns.slice(0, 6).map((checkIn) => (
-              <article key={checkIn.id}>
-                <img src={checkIn.image} alt={`${checkIn.date}の体重管理表`} />
-                <div><strong>{checkIn.weight.toFixed(1)}kg</strong><span>{formatDate(checkIn.date)} / {checkIn.month}ヶ月目</span><p>{checkIn.advice[0]}</p></div>
-                <button onClick={() => onDelete(checkIn.id)}><Trash2 size={15} /></button>
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ActionPanel(props: {
-  tasks: Task[];
-  metrics: Metric[];
-  taskText: string;
-  taskPriority: Priority;
-  onTaskText: (value: string) => void;
-  onTaskPriority: (value: Priority) => void;
-  onAddTask: (event: FormEvent) => void;
-  onUpdateTask: (id: string, partial: Partial<Task>) => void;
-  onRemoveTask: (id: string) => void;
-  onAddMetric: () => void;
-  onUpdateMetric: (id: string, partial: Partial<Metric>) => void;
-}) {
-  return (
-    <section className="panel action-panel">
-      <div className="section-title"><Target size={18} /><h3>今日の行動</h3></div>
-      <form className="task-form" onSubmit={props.onAddTask}>
-        <input value={props.taskText} onChange={(event) => props.onTaskText(event.target.value)} placeholder="今日の行動を追加" />
-        <select value={props.taskPriority} onChange={(event) => props.onTaskPriority(event.target.value as Priority)}>
-          {Object.entries(priorityText).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </select>
-        <button className="primary-button"><Plus size={17} />追加</button>
-      </form>
-      <div className="task-list">
-        {props.tasks.map((task) => (
-          <div className={task.done ? "task-row done" : "task-row"} key={task.id}>
-            <label><input type="checkbox" checked={task.done} onChange={(event) => props.onUpdateTask(task.id, { done: event.target.checked })} />{task.text}</label>
-            <select value={task.priority} onChange={(event) => props.onUpdateTask(task.id, { priority: event.target.value as Priority })}>
-              {Object.entries(priorityText).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-            <button onClick={() => props.onRemoveTask(task.id)}><Trash2 size={15} /></button>
-          </div>
-        ))}
-      </div>
-      <div className="section-title metric-title"><Activity size={18} /><h3>KPI</h3></div>
-      <div className="metric-list">
-        {props.metrics.map((metric) => (
-          <div key={metric.id} className="metric-row">
-            <input value={metric.label} onChange={(event) => props.onUpdateMetric(metric.id, { label: event.target.value })} />
-            <input type="number" value={metric.current} onChange={(event) => props.onUpdateMetric(metric.id, { current: numberValue(event.target.value) })} />
-            <input type="number" value={metric.target} onChange={(event) => props.onUpdateMetric(metric.id, { target: numberValue(event.target.value) })} />
-            <input value={metric.unit} onChange={(event) => props.onUpdateMetric(metric.id, { unit: event.target.value })} />
-            <div><span style={{ width: `${metricProgress(metric)}%` }} /></div>
-          </div>
-        ))}
-      </div>
-      <button className="secondary-button full" onClick={props.onAddMetric}><Plus size={17} />指標を追加</button>
-    </section>
-  );
-}
-
-function MetricTile({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
-  return <article className="metric-tile"><Icon size={22} /><div><span>{label}</span><strong>{value}</strong></div></article>;
-}
-
-function FlowStep({ no, title, text }: { no: string; title: string; text: string }) {
-  return <article><span>{no}</span><strong>{title}</strong><p>{text}</p></article>;
-}
-
-function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
-  return <label className="field"><span>{label}</span><input type="number" value={value} onChange={(event) => onChange(numberValue(event.target.value))} /></label>;
-}
-
-function loadState(): AppState {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return { ...initialState(), ...JSON.parse(saved) };
-  } catch {
-    return initialState();
-  }
-  return initialState();
-}
-
-function initialState(): AppState {
-  const date = today();
-  return {
-    mode: "business",
-    selectedTheme: 1,
-    cycleStart: date,
-    notes: {},
-    tasks: [
-      { id: id("task"), mode: "business", text: "今日の最重要タスクを1つ完了する", priority: "must", done: false },
-      { id: id("task"), mode: "business", text: "見込み客へ1件フォローする", priority: "should", done: false },
-      { id: id("task"), mode: "business", text: "目的のない情報収集をしない", priority: "stop", done: false },
-      { id: id("task"), mode: "diet", text: "体重と食事を記録する", priority: "must", done: false },
-      { id: id("task"), mode: "diet", text: "10分歩く", priority: "should", done: false },
-      { id: id("task"), mode: "diet", text: "夜の間食をしない", priority: "stop", done: false }
-    ],
-    metrics: [
-      { id: id("metric"), mode: "business", label: "売上", current: 420000, target: 1000000, unit: "円" },
-      { id: id("metric"), mode: "business", label: "商談", current: 7, target: 20, unit: "件" },
-      { id: id("metric"), mode: "diet", label: "減量", current: 0.8, target: 3, unit: "kg" },
-      { id: id("metric"), mode: "diet", label: "運動", current: 5, target: 12, unit: "回" }
-    ],
-    dietGoal: {
-      image: "",
-      startDate: date,
-      startWeight: 70,
-      targetWeight: 62,
-      heightCm: 168,
-      months: 3,
-      purpose: "3ヶ月後に納得できる体型をつくる",
-      habits: "1日5分以上歩く\n腹八分を守る\n深い呼吸を1日5分\nよく噛んで食べる"
-    },
-    dietDraft: { image: "", fileName: "", date, month: 1, weight: 70, memo: "" },
-    dietCheckIns: []
-  };
-}
-
-function emptyNote(): ThemeNote {
-  return { fields: {}, learning: "", declaration: "", support: "" };
-}
-
-function buildMonthlySchedule(start: string) {
-  const schedule: Array<{ date: string; themeId: number }> = [];
-  let cursor = new Date(`${start}T00:00:00`);
-  for (let guard = 0; guard < 60 && schedule.length < 8; guard += 1) {
-    const day = cursor.getDay();
-    if (day === 2 || day === 5) schedule.push({ date: toIso(cursor), themeId: schedule.length + 1 });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return schedule;
-}
-
-function getDietStats(state: AppState) {
-  const currentWeight = state.dietCheckIns[0]?.weight || state.dietDraft.weight || state.dietGoal.startWeight;
-  const targetLoss = Math.max(state.dietGoal.startWeight - state.dietGoal.targetWeight, 0);
-  const lost = Math.max(state.dietGoal.startWeight - currentWeight, 0);
-  const remaining = Math.max(currentWeight - state.dietGoal.targetWeight, 0);
-  const weekAgo = Date.now() - 6 * 86_400_000;
-  const uploadsThisWeek = state.dietCheckIns.filter((checkIn) => new Date(`${checkIn.date}T00:00:00`).getTime() >= weekAgo).length;
-  return { currentWeight, lost, remaining, uploadsThisWeek, progress: targetLoss ? Math.min(100, Math.round((lost / targetLoss) * 100)) : 0 };
-}
-
-function buildDietAdvice(state: AppState) {
-  const stats = getDietStats(state);
-  const advice: string[] = [];
-  if (!state.dietGoal.image) advice.push("まず3ヶ月目標設定シートを登録すると、目的に沿ったアドバイスにできます。");
-  if (stats.progress >= 40) advice.push("目標に向けて良いペースです。今週は増やすより、今できている行動を崩さないことを優先しましょう。");
-  else advice.push("次回までに、食事記録か歩く時間のどちらか1つだけ確実に増やしましょう。");
-  if (stats.uploadsThisWeek >= 2) advice.push("週2回のアップロードペースを守れています。写真を撮る行為そのものが良いブレーキになります。");
-  else advice.push("今週はあと1回、体重管理表を撮ってアップロードしましょう。朝活か夜活のタイミングに固定すると続きやすいです。");
-  if (state.dietDraft.memo.includes("飲") || state.dietDraft.memo.includes("外食")) advice.push("飲み会や外食がある週は、翌日を調整日にして水分・歩数・夕食量を整えましょう。");
-  advice.push("体調不良や強い空腹が続く場合は無理に減らさず、専門家に相談しながら進めてください。");
-  return advice;
-}
-
-function buildCoachPrompt(state: AppState, theme: Theme, note: ThemeNote, tasks: Task[], metrics: Metric[]) {
-  const taskLines = tasks.map((task) => `- [${task.done ? "完了" : "未完了"}] ${priorityText[task.priority]}: ${task.text}`).join("\n");
-  if (state.mode === "diet") {
-    const stats = getDietStats(state);
-    return [
-      "GSC習慣化アプリのダイエット記録です。",
-      `開始体重: ${state.dietGoal.startWeight}kg`,
-      `目標体重: ${state.dietGoal.targetWeight}kg`,
-      `現在体重: ${stats.currentWeight.toFixed(1)}kg`,
-      `減量進捗: ${stats.progress}%`,
-      `今週アップロード: ${stats.uploadsThisWeek}/2回`,
-      `目的: ${state.dietGoal.purpose}`,
-      `メモ: ${state.dietDraft.memo || state.dietCheckIns[0]?.memo || "未記入"}`,
-      "",
-      "今日の行動:",
-      taskLines || "- 未登録",
-      "",
-      "依頼: 無理のない次回までの食事・運動・記録アドバイスを3つ提案してください。"
-    ].join("\n");
-  }
-  return [
-    "GSC習慣化アプリのビジネス記録です。",
-    `テーマ: ${theme.id}. ${theme.title}`,
-    ...theme.fields.map((field) => `- ${field}: ${note.fields[field] || "未記入"}`),
-    `気づき: ${note.learning || "未記入"}`,
-    `行動宣言: ${note.declaration || "未記入"}`,
-    "",
-    "今日の行動:",
-    taskLines || "- 未登録",
-    "",
-    "KPI:",
-    metrics.map((metric) => `- ${metric.label}: ${metric.current}${metric.unit}/${metric.target}${metric.unit}`).join("\n") || "- 未登録",
-    "",
-    "依頼: 明日の最重要タスク1つ、やらないこと1つ、改善アドバイスを短く提案してください。"
-  ].join("\n");
-}
-
-function metricAverage(metrics: Metric[]) {
-  if (!metrics.length) return 0;
-  return Math.round(metrics.reduce((sum, metric) => sum + metricProgress(metric), 0) / metrics.length);
-}
-
-function metricProgress(metric: Metric) {
-  return metric.target ? Math.min(100, Math.round((metric.current / metric.target) * 100)) : 0;
-}
-
-function bmi(weight: number, heightCm: number) {
-  const meter = heightCm / 100;
-  return meter ? weight / (meter * meter) : 0;
-}
-
-async function imageToDataUrl(file: File) {
-  const raw = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = raw;
-  });
-  const canvas = document.createElement("canvas");
-  const scale = Math.min(1, 1200 / image.width);
-  canvas.width = Math.round(image.width * scale);
-  canvas.height = Math.round(image.height * scale);
-  canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.75);
-}
-
-function numberValue(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function id(prefix: string) {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function toIso(date: Date) {
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }).format(new Date(`${iso}T00:00:00`));
 }
 
 export default App;
