@@ -28,7 +28,6 @@ type FileStatus = "pending" | "analyzing" | "analyzed" | "error";
 
 type Session = {
   email: string;
-  secretId: string;
   role: Role;
   linkedStudentIds: string[];
   expiresAt: number;
@@ -82,7 +81,7 @@ type Student = {
   analyses: TestAnalysis[];
 };
 
-const SESSION_KEY = "gsc-test-analysis-session-v1";
+const SESSION_KEY = "gsc-test-analysis-session-v2";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const ACCOUNT_SHEET_NAME = "GSC学習塾 / アカウント";
 
