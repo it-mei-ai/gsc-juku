@@ -5,13 +5,10 @@ import {
   BookOpenCheck,
   CheckCircle2,
   ClipboardList,
-  Copy,
-  ExternalLink,
   FileImage,
   FolderOpen,
   GraduationCap,
   KeyRound,
-  Link,
   Lock,
   LogOut,
   Mail,
@@ -28,22 +25,6 @@ type Role = "student" | "parent" | "teacher" | "admin";
 type Subject = "数学" | "英語";
 type Result = "correct" | "partial" | "incorrect";
 type FileStatus = "pending" | "analyzing" | "analyzed" | "error";
-
-type DemoAccount = {
-  email: string;
-  secretId: string;
-  role: Role;
-  label: string;
-  linkedStudentIds: string[];
-};
-
-type MagicToken = {
-  token: string;
-  email: string;
-  secretId: string;
-  expiresAt: number;
-  used: boolean;
-};
 
 type Session = {
   email: string;
@@ -101,10 +82,9 @@ type Student = {
   analyses: TestAnalysis[];
 };
 
-const TOKEN_STORE_KEY = "gsc-test-analysis-magic-tokens-v1";
 const SESSION_KEY = "gsc-test-analysis-session-v1";
-const TOKEN_TTL_MS = 15 * 60 * 1000;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const ACCOUNT_SHEET_NAME = "GSC学習塾 / アカウント";
 
 const resultLabels: Record<Result, string> = {
   correct: "正答",
@@ -118,37 +98,6 @@ const roleLabels: Record<Role, string> = {
   teacher: "講師",
   admin: "管理者"
 };
-
-const demoAccounts: DemoAccount[] = [
-  {
-    email: "parent.hinata@example.com",
-    secretId: "STU-7KQ3-92A",
-    role: "parent",
-    label: "保護者アカウント",
-    linkedStudentIds: ["student-hinata"]
-  },
-  {
-    email: "student.hinata@example.com",
-    secretId: "STU-7KQ3-92A",
-    role: "student",
-    label: "生徒アカウント",
-    linkedStudentIds: ["student-hinata"]
-  },
-  {
-    email: "teacher@gsc-juku.example.com",
-    secretId: "TCH-2026-GSC",
-    role: "teacher",
-    label: "講師アカウント",
-    linkedStudentIds: ["student-hinata", "student-ren"]
-  },
-  {
-    email: "admin@gsc-juku.example.com",
-    secretId: "ADM-2026-GSC",
-    role: "admin",
-    label: "管理者アカウント",
-    linkedStudentIds: ["student-hinata", "student-ren"]
-  }
-];
 
 const initialStudents: Student[] = [
   {
@@ -397,19 +346,6 @@ const initialStudents: Student[] = [
   }
 ];
 
-function readTokens(): MagicToken[] {
-  try {
-    const raw = localStorage.getItem(TOKEN_STORE_KEY);
-    return raw ? (JSON.parse(raw) as MagicToken[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeTokens(tokens: MagicToken[]) {
-  localStorage.setItem(TOKEN_STORE_KEY, JSON.stringify(tokens));
-}
-
 function readSession(): Session | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -423,11 +359,6 @@ function readSession(): Session | null {
   } catch {
     return null;
   }
-}
-
-function createToken() {
-  const random = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function formatPercent(unit: UnitAnalysis) {
@@ -444,35 +375,15 @@ function statusLabel(status: FileStatus) {
 function App() {
   const [students, setStudents] = useState(initialStudents);
   const [session, setSession] = useState<Session | null>(() => readSession());
-  const [email, setEmail] = useState(demoAccounts[0].email);
-  const [secretId, setSecretId] = useState(demoAccounts[0].secretId);
-  const [tokens, setTokens] = useState<MagicToken[]>(() => readTokens());
+  const [email, setEmail] = useState("");
+  const [secretId, setSecretId] = useState("");
   const [loginMessage, setLoginMessage] = useState("");
-  const [copiedToken, setCopiedToken] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState(initialStudents[0].id);
   const [selectedSubject, setSelectedSubject] = useState<Subject>("数学");
   const [auditResult, setAuditResult] = useState("未実行");
   const [syncMessage, setSyncMessage] = useState("Google Driveフォルダは未接続です");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    writeTokens(tokens);
-  }, [tokens]);
-
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const token = url.searchParams.get("token");
-    if (token) {
-      consumeToken(token);
-      url.searchParams.delete("token");
-      window.history.replaceState({}, "", url.toString());
-    }
-  }, []);
-
-  const activeTokens = useMemo(
-    () => tokens.filter((token) => !token.used && token.expiresAt > Date.now()),
-    [tokens]
-  );
 
   const visibleStudents = useMemo(() => {
     if (!session) return [];
@@ -491,80 +402,52 @@ function App() {
   const selectedAnalysis = selectedStudent?.analyses.find((analysis) => analysis.subject === selectedSubject);
   const pendingFiles = selectedStudent?.analyses.flatMap((analysis) => analysis.files).filter((file) => file.status !== "analyzed").length ?? 0;
 
-  function issueMagicLink(event: FormEvent<HTMLFormElement>) {
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedSecret = secretId.trim();
-    const account = demoAccounts.find(
-      (item) => item.email === normalizedEmail && item.secretId === normalizedSecret
-    );
 
-    if (!account) {
-      setLoginMessage("登録済みメールアドレスとIDの組み合わせが見つかりません。");
+    if (!normalizedEmail || !normalizedSecret) {
+      setLoginMessage("メールアドレスとIDを入力してください。");
       return;
     }
 
-    const token: MagicToken = {
-      token: createToken(),
-      email: account.email,
-      secretId: account.secretId,
-      expiresAt: Date.now() + TOKEN_TTL_MS,
-      used: false
-    };
-    setTokens((current) => [token, ...current.filter((item) => item.expiresAt > Date.now()).slice(0, 4)]);
-    setLoginMessage("デモ受信箱にログインURLを発行しました。");
-  }
+    setLoginLoading(true);
+    setLoginMessage("スプレッドシートの登録情報を確認しています...");
 
-  function consumeToken(tokenValue: string) {
-    const found = readTokens().find((item) => item.token === tokenValue);
-    if (!found || found.used || found.expiresAt <= Date.now()) {
-      setLoginMessage("ログインURLが無効、または有効期限切れです。");
-      return;
+    try {
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail, secretId: normalizedSecret })
+      });
+      const payload = (await response.json()) as { account?: Omit<Session, "expiresAt">; error?: string };
+
+      if (!response.ok || !payload.account) {
+        setLoginMessage(payload.error ?? "登録済みメールアドレスとIDの組み合わせが見つかりません。");
+        return;
+      }
+
+      const nextSession: Session = {
+        ...payload.account,
+        expiresAt: Date.now() + SESSION_TTL_MS
+      };
+
+      localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+      setSession(nextSession);
+      setLoginMessage("");
+      setSelectedStudentId(nextSession.linkedStudentIds[0] ?? initialStudents[0].id);
+    } catch {
+      setLoginMessage("アカウント確認APIに接続できませんでした。時間をおいて再度お試しください。");
+    } finally {
+      setLoginLoading(false);
     }
-
-    const account = demoAccounts.find(
-      (item) => item.email === found.email && item.secretId === found.secretId
-    );
-    if (!account) {
-      setLoginMessage("このURLのアカウントが見つかりません。");
-      return;
-    }
-
-    const nextSession: Session = {
-      email: account.email,
-      secretId: account.secretId,
-      role: account.role,
-      linkedStudentIds: account.linkedStudentIds,
-      expiresAt: Date.now() + SESSION_TTL_MS
-    };
-
-    localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
-    setSession(nextSession);
-    setTokens((current) =>
-      current.map((item) => (item.token === tokenValue ? { ...item, used: true } : item))
-    );
-    setLoginMessage("");
-    setSelectedStudentId(account.linkedStudentIds[0] ?? initialStudents[0].id);
   }
 
   function logout() {
     localStorage.removeItem(SESSION_KEY);
     setSession(null);
     setAuditResult("未実行");
-  }
-
-  function tokenUrl(token: string) {
-    return `${window.location.origin}${window.location.pathname}?token=${token}`;
-  }
-
-  async function copyToken(token: string) {
-    const url = tokenUrl(token);
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiedToken(token);
-    } catch {
-      setCopiedToken("");
-    }
   }
 
   function runDriveSync() {
@@ -635,12 +518,12 @@ function App() {
           </div>
 
           <div className="auth-grid">
-            <form className="login-card" onSubmit={issueMagicLink}>
+            <form className="login-card" onSubmit={handleLogin}>
               <div>
-                <p className="section-kicker">Magic Link Login</p>
-                <h2>メールで届くURLから安全にログイン</h2>
+                <p className="section-kicker">Spreadsheet Login</p>
+                <h2>登録済みアカウントだけログイン</h2>
                 <p className="muted">
-                  登録済みメールアドレスと生徒ID、または先生IDの組み合わせだけでURLを発行します。
+                  アカウントはGoogleスプレッドシートで管理します。メールアドレスとIDの組み合わせをサーバー側で照合します。
                 </p>
               </div>
 
@@ -653,21 +536,26 @@ function App() {
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     autoComplete="email"
+                    placeholder="例: user@example.com"
                   />
                 </span>
               </label>
 
               <label>
-                生徒ID / 先生ID
+                ID
                 <span className="input-shell">
                   <KeyRound size={18} />
-                  <input value={secretId} onChange={(event) => setSecretId(event.target.value)} />
+                  <input
+                    value={secretId}
+                    onChange={(event) => setSecretId(event.target.value)}
+                    placeholder="例: ADM-YYYY-001"
+                  />
                 </span>
               </label>
 
-              <button className="primary-button" type="submit">
-                <Link size={18} />
-                ログインURLを送信
+              <button className="primary-button" type="submit" disabled={loginLoading}>
+                <ShieldCheck size={18} />
+                {loginLoading ? "確認中" : "登録を確認してログイン"}
               </button>
 
               {loginMessage ? <p className="form-message">{loginMessage}</p> : null}
@@ -675,11 +563,11 @@ function App() {
               <div className="security-list" aria-label="セキュリティ方針">
                 <span>
                   <ShieldCheck size={16} />
-                  15分で失効
+                  シート照合
                 </span>
                 <span>
                   <Lock size={16} />
-                  1回使用
+                  API側で確認
                 </span>
                 <span>
                   <UsersRound size={16} />
@@ -688,57 +576,24 @@ function App() {
               </div>
             </form>
 
-            <aside className="mail-preview">
+            <aside className="sheet-panel">
               <div className="panel-heading">
                 <div>
-                  <p className="section-kicker">Demo inbox</p>
-                  <h2>デモ受信箱</h2>
+                  <p className="section-kicker">Account source</p>
+                  <h2>アカウント台帳</h2>
                 </div>
-                <Mail size={22} />
+                <ClipboardList size={22} />
               </div>
-
-              {activeTokens.length === 0 ? (
-                <div className="empty-state">
-                  <p>ログインURLはまだ届いていません。</p>
-                  <span>左のフォームから発行すると、ここに表示されます。</span>
-                </div>
-              ) : (
-                activeTokens.map((token) => (
-                  <article className="mail-item" key={token.token}>
-                    <div>
-                      <strong>{token.email}</strong>
-                      <p>有効期限: {new Date(token.expiresAt).toLocaleTimeString("ja-JP")}</p>
-                    </div>
-                    <div className="mail-actions">
-                      <button type="button" onClick={() => consumeToken(token.token)}>
-                        <ExternalLink size={16} />
-                        URLを開く
-                      </button>
-                      <button type="button" onClick={() => copyToken(token.token)} aria-label="ログインURLをコピー">
-                        <Copy size={16} />
-                        {copiedToken === token.token ? "コピー済み" : "コピー"}
-                      </button>
-                    </div>
-                  </article>
-                ))
-              )}
-
-              <div className="demo-accounts">
-                <p className="section-kicker">登録済みアカウント</p>
-                {demoAccounts.map((account) => (
-                  <button
-                    type="button"
-                    key={account.email}
-                    onClick={() => {
-                      setEmail(account.email);
-                      setSecretId(account.secretId);
-                    }}
-                  >
-                    <span>{account.label}</span>
-                    <strong>{account.email}</strong>
-                    <small>{account.secretId}</small>
-                  </button>
-                ))}
+              <div className="sheet-source-card">
+                <strong>{ACCOUNT_SHEET_NAME}</strong>
+                <span>列: メールアドレス / 権限 / ID</span>
+                <span>権限: 管理者 / 講師 / 生徒 / 保護者</span>
+              </div>
+              <div className="empty-state">
+                <p>初期画面にアカウント一覧は表示しません。</p>
+                <span>
+                  本番運用では、メール送信・一時トークン・試行回数制限をサーバー側に追加します。
+                </span>
               </div>
             </aside>
           </div>
