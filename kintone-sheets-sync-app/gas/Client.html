@@ -1,0 +1,343 @@
+<script>
+  const state = {
+    settings: [],
+    selectedAction: "",
+    mode: "dryRun",
+    logs: []
+  };
+
+  const adviceItems = [
+    { type: "ok", text: "最初は対象シート1つ、数件だけのテスト同期から始める。" },
+    { type: "ok", text: "一意キーは管理IDなどの重複しない列に固定する。" },
+    { type: "warn", text: "削除の自動同期は初期版に入れず、まず登録と更新だけにする。" },
+    { type: "warn", text: "本実行前に差分プレビューとログ保存を必須にする。" }
+  ];
+
+  const app = document.querySelector("#app");
+
+  function loadSettings() {
+    setLoading("設定を読み込み中です。");
+    google.script.run
+      .withSuccessHandler((payload) => {
+        state.settings = payload.settings || [];
+        state.selectedAction = state.selectedAction || (state.settings[0] && state.settings[0].actionName) || "";
+        addLog("success", "設定を読み込みました", `${state.settings.length}件 / ${payload.generatedAt}`);
+        render();
+      })
+      .withFailureHandler((error) => {
+        state.settings = [];
+        addLog("error", "設定を読み込めませんでした", error.message || String(error));
+        render();
+      })
+      .getSettings();
+  }
+
+  function currentSetting() {
+    return state.settings.find((setting) => setting.actionName === state.selectedAction) || state.settings[0] || null;
+  }
+
+  function parseMapping(mappingText) {
+    if (!mappingText) return [];
+    return String(mappingText)
+      .split(/[\n,]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const pieces = part.split(/\s*(?:=>|:|=)\s*/);
+        return {
+          sheetField: pieces[0] || "",
+          kintoneField: pieces[1] || pieces[0] || ""
+        };
+      });
+  }
+
+  function render() {
+    const setting = currentSetting();
+    const activeCount = state.settings.filter((item) => item.enabled).length;
+    const bidirectionalCount = state.settings.filter((item) => item.allowKintoneToSheet && item.allowSheetToKintone).length;
+
+    app.innerHTML = `
+      <main>
+        <header class="topbar">
+          <div class="brand">
+            <div class="brand-mark">K</div>
+            <div>
+              <p class="eyebrow">kintone / Google Sheets</p>
+              <h1>同期アクション管理</h1>
+            </div>
+          </div>
+          <div class="status-row">
+            <span class="pill ok">設定シート: 設定</span>
+            <span class="pill ok">APIトークン非表示</span>
+            <span class="pill ${state.mode === "dryRun" ? "warn" : "ok"}">${state.mode === "dryRun" ? "テスト" : "本実行"}</span>
+          </div>
+        </header>
+
+        <section class="layout">
+          <aside class="sidebar">
+            <div class="control-group">
+              <label for="actionSelect">アクション名</label>
+              <select id="actionSelect" ${state.settings.length ? "" : "disabled"}>
+                ${state.settings
+                  .map(
+                    (item) =>
+                      `<option value="${escapeHtml(item.actionName)}" ${
+                        setting && item.actionName === setting.actionName ? "selected" : ""
+                      }>${escapeHtml(item.actionName)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>実行モード</label>
+              <div class="mode-toggle">
+                <button type="button" data-mode="dryRun" class="${state.mode === "dryRun" ? "active" : ""}">テスト</button>
+                <button type="button" data-mode="live" class="${state.mode === "live" ? "active" : ""}">本実行</button>
+              </div>
+            </div>
+
+            <button type="button" class="small-button primary" id="reloadButton">設定を再読込</button>
+          </aside>
+
+          <div class="content">
+            <section class="overview">
+              <div class="metric"><span>設定数</span><strong>${state.settings.length}</strong></div>
+              <div class="metric"><span>有効設定</span><strong>${activeCount}</strong></div>
+              <div class="metric"><span>双方向許可</span><strong>${bidirectionalCount}</strong></div>
+              <div class="metric"><span>選択行</span><strong>${setting ? setting.rowNumber : "-"}</strong></div>
+            </section>
+
+            ${setting ? renderSetting(setting) : `<div class="panel"><div class="empty">設定がありません。</div></div>`}
+
+            <section class="log-panel">
+              <div class="log-header">
+                <h2>実行ログ</h2>
+                <button type="button" class="small-button" id="clearLogsButton">クリア</button>
+              </div>
+              <div class="log-body">
+                ${state.logs.map(renderLog).join("") || `<div class="empty">ログはまだありません。</div>`}
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    `;
+
+    bindEvents();
+  }
+
+  function renderSetting(setting) {
+    const mappingRows = parseMapping(setting.mapping);
+    return `
+      <section class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>設定内容</h2>
+            <span class="pill ${setting.enabled ? "ok" : "warn"}">${setting.enabled ? "有効" : "無効"}</span>
+          </div>
+          <div class="field-grid">
+            ${renderField("kintoneドメイン", setting.domain)}
+            ${renderField("アプリID", setting.appId)}
+            ${renderField("対象シート", setting.sheetName)}
+            ${renderField("一意キー", setting.keyField)}
+            ${renderField("取得条件", setting.query || "未設定")}
+            ${renderField("APIトークン", setting.tokenStatus, true)}
+            ${renderField("kintone⇨スプシ", setting.allowKintoneToSheet)}
+            ${renderField("スプシ⇨kintone", setting.allowSheetToKintone)}
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>同期操作</h2>
+            <span class="pill">${state.mode === "dryRun" ? "テスト" : "本実行"}</span>
+          </div>
+          <div class="button-row">
+            <button type="button" class="sync-button primary" id="kintoneToSheetButton" ${
+              setting.allowKintoneToSheet && setting.enabled ? "" : "disabled"
+            }>kintone⇨スプシ</button>
+            <button type="button" class="sync-button reverse" id="sheetToKintoneButton" ${
+              setting.allowSheetToKintone && setting.enabled ? "" : "disabled"
+            }>スプシ⇨kintone</button>
+          </div>
+          <ul class="summary-list">
+            ${renderSummary(setting)}
+          </ul>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>項目マッピング</h2>
+            <span class="pill">${mappingRows.length}項目</span>
+          </div>
+          ${renderMappingTable(mappingRows)}
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>仕様アドバイス</h2>
+            <span class="pill">MVP向け</span>
+          </div>
+          <ul class="advice-list">
+            ${adviceItems.map((item) => `<li class="${item.type}">${escapeHtml(item.text)}</li>`).join("")}
+          </ul>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderField(label, value, secret = false) {
+    return `
+      <div class="field">
+        <span>${escapeHtml(label)}</span>
+        <strong class="${secret ? "secret-value" : ""}">${escapeHtml(toDisplay(value))}</strong>
+      </div>
+    `;
+  }
+
+  function renderSummary(setting) {
+    const items = [
+      {
+        type: setting.tokenStatus === "未設定" ? "warn" : "ok",
+        text: setting.tokenStatus === "未設定" ? "APIトークンが未設定です。" : "APIトークンは保存済みです。"
+      },
+      {
+        type: setting.keyField ? "ok" : "warn",
+        text: setting.keyField ? `一意キー: ${setting.keyField}` : "一意キーを設定してください。"
+      },
+      {
+        type: setting.allowKintoneToSheet || setting.allowSheetToKintone ? "ok" : "warn",
+        text:
+          setting.allowKintoneToSheet || setting.allowSheetToKintone
+            ? "許可された方向のボタンだけ実行できます。"
+            : "同期方向が許可されていません。"
+      }
+    ];
+
+    return items.map((item) => `<li class="${item.type}">${escapeHtml(item.text)}</li>`).join("");
+  }
+
+  function renderMappingTable(rows) {
+    if (!rows.length) return `<div class="empty">マッピング未設定</div>`;
+    return `
+      <table class="mapping-table">
+        <thead><tr><th>スプレッドシート列</th><th>kintoneフィールドコード</th></tr></thead>
+        <tbody>
+          ${rows
+            .map(
+              (row) => `
+                <tr>
+                  <td>${escapeHtml(row.sheetField)}</td>
+                  <td>${escapeHtml(row.kintoneField)}</td>
+                </tr>
+              `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function bindEvents() {
+    const actionSelect = document.querySelector("#actionSelect");
+    if (actionSelect) {
+      actionSelect.addEventListener("change", (event) => {
+        state.selectedAction = event.target.value;
+        render();
+      });
+    }
+
+    document.querySelectorAll("[data-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.mode = button.dataset.mode;
+        render();
+      });
+    });
+
+    document.querySelector("#reloadButton")?.addEventListener("click", loadSettings);
+    document.querySelector("#clearLogsButton")?.addEventListener("click", () => {
+      state.logs = [];
+      render();
+    });
+    document.querySelector("#kintoneToSheetButton")?.addEventListener("click", () => runSync("kintoneToSheet"));
+    document.querySelector("#sheetToKintoneButton")?.addEventListener("click", () => runSync("sheetToKintone"));
+  }
+
+  function runSync(direction) {
+    const setting = currentSetting();
+    if (!setting) return;
+    addLog("warn", "同期を開始しました", `${setting.actionName} / ${direction}`);
+    render();
+
+    google.script.run
+      .withSuccessHandler((result) => {
+        addLog("success", "同期が完了しました", result.message);
+        render();
+      })
+      .withFailureHandler((error) => {
+        addLog("error", "同期に失敗しました", error.message || String(error));
+        render();
+      })
+      .runSync({
+        actionName: setting.actionName,
+        direction,
+        mode: state.mode
+      });
+  }
+
+  function addLog(status, title, detail) {
+    state.logs.unshift({
+      status,
+      title,
+      detail,
+      time: new Date().toLocaleString("ja-JP")
+    });
+    state.logs = state.logs.slice(0, 12);
+  }
+
+  function setLoading(message) {
+    app.innerHTML = `
+      <main>
+        <header class="topbar">
+          <div class="brand">
+            <div class="brand-mark">K</div>
+            <div>
+              <p class="eyebrow">kintone / Google Sheets</p>
+              <h1>同期アクション管理</h1>
+            </div>
+          </div>
+          <span class="pill warn">${escapeHtml(message)}</span>
+        </header>
+      </main>
+    `;
+  }
+
+  function renderLog(log) {
+    return `
+      <article class="log-item ${log.status}">
+        <strong>${escapeHtml(log.title)}</strong>
+        <span>${escapeHtml(log.time)}</span>
+        <p>${escapeHtml(log.detail)}</p>
+      </article>
+    `;
+  }
+
+  function toDisplay(value) {
+    if (value === true) return "◯";
+    if (value === false) return "-";
+    if (value === undefined || value === null || value === "") return "未設定";
+    return String(value);
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  loadSettings();
+</script>

@@ -4,6 +4,8 @@ import path from "node:path";
 const root = process.cwd();
 const distDir = path.join(root, "dist");
 const serverDir = path.join(distDir, "server");
+const kintoneAppDir = path.join(root, "kintone-sheets-sync-app");
+const kintoneDistDir = path.join(distDir, "kintone");
 const hostingSource = path.join(root, ".openai", "hosting.json");
 const hostingTarget = path.join(distDir, ".openai", "hosting.json");
 
@@ -17,10 +19,15 @@ if (!fs.existsSync(hostingSource)) {
 
 fs.rmSync(path.join(distDir, "ai-community-assets"), { recursive: true, force: true });
 fs.rmSync(path.join(distDir, "gsc-assets"), { recursive: true, force: true });
+fs.rmSync(kintoneDistDir, { recursive: true, force: true });
 fs.rmSync(serverDir, { recursive: true, force: true });
 fs.mkdirSync(serverDir, { recursive: true });
 fs.mkdirSync(path.dirname(hostingTarget), { recursive: true });
 fs.copyFileSync(hostingSource, hostingTarget);
+
+if (fs.existsSync(kintoneAppDir)) {
+  copyStaticApp(kintoneAppDir, kintoneDistDir);
+}
 
 const assets = {};
 
@@ -55,6 +62,9 @@ function bytesFromBase64(base64) {
 function routeFor(url) {
   const pathname = decodeURIComponent(url.pathname);
   if (pathname === "/") return "/index.html";
+  if (pathname === "/kintone/" || pathname.startsWith("/kintone/") && !pathname.includes(".")) {
+    return "/kintone/index.html";
+  }
   if (ASSETS[pathname]) return pathname;
   if (!pathname.includes(".")) return "/index.html";
   return pathname;
@@ -196,6 +206,10 @@ export default {
       url.pathname = "/jyuku";
       return Response.redirect(url.toString(), 302);
     }
+    if (url.pathname === "/kintone") {
+      url.pathname = "/kintone/";
+      return Response.redirect(url.toString(), 302);
+    }
     const route = routeFor(url);
     const asset = ASSETS[route];
 
@@ -238,6 +252,23 @@ function* walk(directory) {
       yield* walk(fullPath);
     } else if (entry.isFile()) {
       yield fullPath;
+    }
+  }
+}
+
+function copyStaticApp(sourceDirectory, targetDirectory) {
+  fs.mkdirSync(targetDirectory, { recursive: true });
+
+  for (const entry of fs.readdirSync(sourceDirectory, { withFileTypes: true })) {
+    if (entry.name === "gas" || entry.name === "README.md") continue;
+
+    const sourcePath = path.join(sourceDirectory, entry.name);
+    const targetPath = path.join(targetDirectory, entry.name);
+
+    if (entry.isDirectory()) {
+      fs.cpSync(sourcePath, targetPath, { recursive: true });
+    } else if (entry.isFile()) {
+      fs.copyFileSync(sourcePath, targetPath);
     }
   }
 }
