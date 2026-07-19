@@ -96,7 +96,6 @@ async function handleLoginRequest(request) {
   return jsonResponse({
     account: {
       email: account.email,
-      secretId: account.secretId,
       role: account.role,
       linkedStudentIds: linkedStudentsFor(account.role)
     }
