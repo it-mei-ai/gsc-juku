@@ -83,7 +83,6 @@ h3 {
 .security-list,
 .metric-tile,
 .drive-actions,
-.mail-actions,
 .subject-tabs,
 .result-label,
 .file-status {
@@ -125,7 +124,7 @@ h3 {
 }
 
 .login-card,
-.mail-preview,
+.sheet-panel,
 .panel,
 .metric-tile,
 .student-summary,
@@ -138,7 +137,7 @@ h3 {
 }
 
 .login-card,
-.mail-preview,
+.sheet-panel,
 .panel,
 .student-summary,
 .score-panel,
@@ -191,8 +190,6 @@ input {
 .primary-button,
 .secondary-button,
 .session-box button,
-.mail-actions button,
-.demo-accounts button,
 .student-item,
 .subject-tabs button {
   display: inline-flex;
@@ -269,49 +266,35 @@ input {
   color: #65717c;
 }
 
-.mail-preview {
+.sheet-panel {
   display: grid;
   align-content: start;
   gap: 14px;
 }
 
-.mail-item {
+.sheet-source-card {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 14px;
-  align-items: center;
+  gap: 8px;
   border: 1px solid #dbe4e1;
   border-radius: 8px;
   background: #fbfdfc;
-  padding: 14px;
+  padding: 16px;
 }
 
-.mail-item p,
+.sheet-source-card strong {
+  color: #111827;
+  font-size: 16px;
+}
+
+.sheet-source-card span {
+  color: #65717c;
+  line-height: 1.55;
+}
+
 .file-status span,
-.student-item small,
-.demo-accounts small {
+.student-item small {
   color: #6b7782;
   font-size: 12px;
-}
-
-.mail-actions {
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.demo-accounts {
-  display: grid;
-  gap: 9px;
-  margin-top: 4px;
-}
-
-.demo-accounts button {
-  display: grid;
-  justify-items: start;
-  height: auto;
-  text-align: left;
-  white-space: normal;
 }
 
 .topbar {
@@ -709,12 +692,10 @@ input {
     grid-template-columns: 1fr;
   }
 
-  .mail-item,
   .student-summary {
     grid-template-columns: 1fr;
   }
 
-  .mail-actions,
   .session-box {
     justify-content: flex-start;
   }
@@ -722,7 +703,6 @@ input {
   .primary-button,
   .secondary-button,
   .session-box button,
-  .mail-actions button,
   .subject-tabs button {
     width: 100%;
   }
