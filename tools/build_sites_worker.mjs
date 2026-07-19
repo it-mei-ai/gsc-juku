@@ -37,6 +37,7 @@ for (const file of walk(distDir)) {
 }
 
 const serverSource = `const ASSETS = ${JSON.stringify(assets)};
+const ACCOUNT_CSV_URL = "https://docs.google.com/spreadsheets/d/1UpF8ay310CZ1T48iJO8-LZZQhGdZjdwtcBfSLZMM_48/gviz/tq?tqx=out:csv&sheet=%E3%82%A2%E3%82%AB%E3%82%A6%E3%83%B3%E3%83%88";
 
 const COMMON_HEADERS = {
   "X-Content-Type-Options": "nosniff"
@@ -59,9 +60,143 @@ function routeFor(url) {
   return pathname;
 }
 
+async function handleLoginRequest(request) {
+  if (request.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "入力内容を確認できませんでした。" }, 400);
+  }
+
+  const email = String(body.email || "").trim().toLowerCase();
+  const secretId = String(body.secretId || "").trim();
+  if (!email || !secretId) {
+    return jsonResponse({ error: "メールアドレスとIDを入力してください。" }, 400);
+  }
+
+  let rows;
+  try {
+    rows = await fetchAccountRows();
+  } catch {
+    return jsonResponse({ error: "アカウント台帳に接続できませんでした。" }, 503);
+  }
+
+  const account = rows.find((row) => {
+    return row.email.toLowerCase() === email && row.secretId === secretId;
+  });
+
+  if (!account) {
+    return jsonResponse({ error: "登録済みメールアドレスとIDの組み合わせが見つかりません。" }, 401);
+  }
+
+  return jsonResponse({
+    account: {
+      email: account.email,
+      secretId: account.secretId,
+      role: account.role,
+      linkedStudentIds: linkedStudentsFor(account.role)
+    }
+  });
+}
+
+async function fetchAccountRows() {
+  const response = await fetch(ACCOUNT_CSV_URL, {
+    headers: { "Accept": "text/csv,text/plain,*/*" }
+  });
+  if (!response.ok) {
+    throw new Error("Account sheet fetch failed");
+  }
+
+  const csv = await response.text();
+  const rows = parseCsv(csv);
+  const header = rows.shift() || [];
+  const emailIndex = header.indexOf("メールアドレス");
+  const roleIndex = header.indexOf("権限");
+  const idIndex = header.indexOf("ID");
+
+  if (emailIndex < 0 || roleIndex < 0 || idIndex < 0) {
+    throw new Error("Account sheet headers are invalid");
+  }
+
+  return rows
+    .map((row) => {
+      return {
+        email: String(row[emailIndex] || "").trim(),
+        role: roleFor(String(row[roleIndex] || "").trim()),
+        secretId: String(row[idIndex] || "").trim()
+      };
+    })
+    .filter((row) => row.email && row.role && row.secretId);
+}
+
+function parseCsv(csv) {
+  const rows = [];
+  let row = [];
+  let value = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < csv.length; index += 1) {
+    const char = csv[index];
+    const next = csv[index + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      value += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(value);
+      value = "";
+    } else if ((char === "\\n" || char === "\\r") && !inQuotes) {
+      if (char === "\\r" && next === "\\n") index += 1;
+      row.push(value);
+      if (row.some((cell) => cell !== "")) rows.push(row);
+      row = [];
+      value = "";
+    } else {
+      value += char;
+    }
+  }
+
+  row.push(value);
+  if (row.some((cell) => cell !== "")) rows.push(row);
+  return rows;
+}
+
+function roleFor(label) {
+  if (label === "管理者") return "admin";
+  if (label === "講師") return "teacher";
+  if (label === "生徒") return "student";
+  if (label === "保護者") return "parent";
+  return "";
+}
+
+function linkedStudentsFor(role) {
+  if (role === "admin" || role === "teacher") return ["student-hinata", "student-ren"];
+  return ["student-hinata"];
+}
+
+function jsonResponse(payload, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...COMMON_HEADERS, "Content-Type": "application/json; charset=utf-8" }
+  });
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/login") {
+      return handleLoginRequest(request);
+    }
+    if (url.pathname === "/") {
+      url.pathname = "/jyuku";
+      return Response.redirect(url.toString(), 302);
+    }
     const route = routeFor(url);
     const asset = ASSETS[route];
 
